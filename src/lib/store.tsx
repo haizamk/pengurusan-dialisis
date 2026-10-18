@@ -65,14 +65,24 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let cancelled = false
-    loadDatabase().then((result) => {
-      if (cancelled) return
-      setData(result.data)
-      setSource(result.source)
-      setError(result.error)
-      if (result.source === "local") writeLocal(result.data)
-      setReady(true)
-    })
+    loadDatabase()
+      .then((result) => {
+        if (cancelled) return
+        setData(result.data)
+        setSource(result.source)
+        setError(result.error)
+        if (result.source === "local") writeLocal(result.data)
+        setReady(true)
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return
+        const seeded = createSeed()
+        writeLocal(seeded)
+        setData(seeded)
+        setSource("local")
+        setError(error instanceof Error ? error.message : "Gagal memuatkan data.")
+        setReady(true)
+      })
     return () => {
       cancelled = true
     }
@@ -194,6 +204,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         commitLocal(seed)
         setSource("local")
         setError(null)
+        setReady(true)
       },
       seedRemoteDemo: async () => {
         const seed = createSeed()
