@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useMemo } from "react"
 import { Disclaimer, LoadingBlock, PageHeader } from "@/components/page-header"
+import { PatientHome } from "@/components/screens/patient-home"
 import { StatusBadge } from "@/components/status-badge"
 import { buttonVariants } from "@/components/ui/button"
 import {
@@ -62,6 +63,21 @@ export function DashboardScreen() {
       : centres.find((centre) => centre.id === centreFilter)?.name
 
   if (!ready) return <LoadingBlock />
+  if (profile?.role === "pesakit") return <PatientHome />
+  if (profile?.role === "super_admin") {
+    return (
+      <PageHeader
+        eyebrow="Super admin"
+        title="Pendaftaran akaun"
+        description="Anda melihat status pendaftaran sahaja. Rekod kesihatan pesakit tidak dipaparkan di sini."
+        action={
+          <Link href="/permohonan" className={cn(buttonVariants(), "h-12")}>
+            Semak permohonan
+          </Link>
+        }
+      />
+    )
+  }
 
   const now = new Date()
   const todayLabel = formatLongDate(now)

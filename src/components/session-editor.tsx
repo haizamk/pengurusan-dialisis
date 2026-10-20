@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { estimatedNetRemovalL, ufRateFromMachine } from "@/lib/monitoring"
 import { analyseUf } from "@/lib/uf"
 import { previousCompletedSession } from "@/lib/queries"
 import { useStore } from "@/lib/store"
@@ -23,6 +24,11 @@ type Draft = {
   post: string
   dry: string
   duration: string
+  prescribed: string
+  machineUf: string
+  ufTarget: string
+  symptoms: string
+  sessionTime: string
   systolicPre: string
   diastolicPre: string
   systolicPost: string
@@ -49,6 +55,11 @@ function blank(): Draft {
     post: "",
     dry: "",
     duration: "240",
+    prescribed: "",
+    machineUf: "",
+    ufTarget: "",
+    symptoms: "",
+    sessionTime: "",
     systolicPre: "",
     diastolicPre: "",
     systolicPost: "",
@@ -87,6 +98,11 @@ export function SessionEditor({
         post: session.postWeightKg == null ? "" : String(session.postWeightKg),
         dry: String(session.dryWeightKg),
         duration: String(session.durationMin),
+        prescribed: session.prescribedDurationMin == null ? "" : String(session.prescribedDurationMin),
+        machineUf: session.machineUfMl == null ? "" : String(session.machineUfMl),
+        ufTarget: session.ufTargetL == null ? "" : String(session.ufTargetL),
+        symptoms: session.symptoms ?? "",
+        sessionTime: session.sessionTime ?? "",
         systolicPre: session.systolicPre == null ? "" : String(session.systolicPre),
         diastolicPre: session.diastolicPre == null ? "" : String(session.diastolicPre),
         systolicPost: session.systolicPost == null ? "" : String(session.systolicPost),
@@ -217,6 +233,12 @@ export function SessionEditor({
       diastolicPost: optionalNumber(draft.diastolicPost),
       notes: draft.notes.trim(),
       createdAt: draft.createdAt ?? new Date().toISOString(),
+      sessionTime: draft.sessionTime || null,
+      prescribedDurationMin: optionalNumber(draft.prescribed),
+      machineUfMl: optionalNumber(draft.machineUf),
+      ufTargetL: optionalNumber(draft.ufTarget),
+      symptoms: draft.symptoms.trim(),
+      updatedAt: new Date().toISOString(),
     }
     try {
       await saveSession(next, draft.id ? "update" : "insert")
@@ -277,8 +299,20 @@ export function SessionEditor({
           <Field label="Berat kering sesi ini (kg)">
             <Input className="h-11" type="number" inputMode="decimal" step="0.1" value={draft.dry} onChange={(event) => set("dry", event.target.value)} />
           </Field>
-          <Field label="Tempoh (minit)">
-            <Input className="h-11" type="number" min={60} max={480} step="15" value={draft.duration} onChange={(event) => set("duration", event.target.value)} />
+          <Field label="Tempoh sebenar (minit)">
+            <Input className="h-12" type="number" min={60} max={480} step="15" value={draft.duration} onChange={(event) => set("duration", event.target.value)} />
+          </Field>
+          <Field label="Tempoh ditetapkan (minit, jika ada)">
+            <Input className="h-12" type="number" min={60} max={480} step="15" value={draft.prescribed} onChange={(event) => set("prescribed", event.target.value)} />
+          </Field>
+          <Field label="UF mesin (mL, jika ada)">
+            <Input className="h-12" type="number" min={0} step="1" value={draft.machineUf} onChange={(event) => set("machineUf", event.target.value)} />
+          </Field>
+          <Field label="Sasaran UF daripada arahan rawatan (L)">
+            <Input className="h-12" type="number" min={0} step="0.1" value={draft.ufTarget} onChange={(event) => set("ufTarget", event.target.value)} />
+          </Field>
+          <Field label="Masa sesi">
+            <Input className="h-12" type="time" value={draft.sessionTime} onChange={(event) => set("sessionTime", event.target.value)} />
           </Field>
           <Field label="TD sebelum (sistolik)">
             <Input className="h-11" type="number" value={draft.systolicPre} onChange={(event) => set("systolicPre", event.target.value)} />
@@ -293,8 +327,11 @@ export function SessionEditor({
             <Input className="h-11" type="number" value={draft.diastolicPost} onChange={(event) => set("diastolicPost", event.target.value)} />
           </Field>
         </div>
+        <Field label="Gejala">
+          <Textarea value={draft.symptoms} onChange={(event) => set("symptoms", event.target.value)} placeholder="Kram, pening, letih, atau lain-lain" />
+        </Field>
         <Field label="Catatan sesi">
-          <Textarea value={draft.notes} onChange={(event) => set("notes", event.target.value)} placeholder="Kekejangan, sesak, hipotensi, atau isu akses" />
+          <Textarea value={draft.notes} onChange={(event) => set("notes", event.target.value)} placeholder="Nota lain tentang sesi" />
         </Field>
         <label className="flex items-start gap-2 text-sm leading-5">
           <input
@@ -309,8 +346,59 @@ export function SessionEditor({
           {draft.id ? "Simpan perubahan" : "Simpan sesi"}
         </Button>
       </form>
-      <UfPanel analysis={analysis} />
+      <div className="grid gap-4">
+        <UfPanel analysis={analysis} />
+        <MonitoringReadout
+          pre={optionalNumber(draft.arrival)}
+          post={optionalNumber(draft.post)}
+          machineUfMl={optionalNumber(draft.machineUf)}
+          durationMin={Number(draft.duration)}
+          dry={optionalNumber(draft.dry)}
+          targetL={optionalNumber(draft.ufTarget)}
+        />
+      </div>
     </div>
+  )
+}
+
+function MonitoringReadout({
+  pre,
+  post,
+  machineUfMl,
+  durationMin,
+  dry,
+  targetL,
+}: {
+  pre: number | null
+  post: number | null
+  machineUfMl: number | null
+  durationMin: number
+  dry: number | null
+  targetL: number | null
+}) {
+  const removal = estimatedNetRemovalL(pre, post)
+  const rate = ufRateFromMachine({
+    machineUfMl,
+    actualDurationMin: durationMin,
+    weightKg: dry,
+    weightLabel: "berat kering sesi ini",
+  })
+  return (
+    <section className="rounded-2xl bg-card p-5 ring-1 ring-foreground/10">
+      <h2 className="font-heading text-2xl">Tiga angka yang berbeza</h2>
+      <ul className="mt-3 space-y-2 text-sm leading-6">
+        <li>UF mesin: {machineUfMl == null ? "Belum direkodkan" : `${machineUfMl} mL`}</li>
+        <li>Anggaran daripada berat: {removal.value == null ? removal.reason : `${removal.value} L`}</li>
+        <li>Kadar UF: {rate.mlPerHour.value == null ? rate.mlPerHour.reason : `${rate.mlPerHour.value} mL/jam`}</li>
+        <li>
+          Kadar ikut berat ({rate.weightLabel}): {rate.mlPerKgHour.value == null ? rate.mlPerKgHour.reason : `${rate.mlPerKgHour.value} mL/kg/jam`}
+        </li>
+        <li>Sasaran yang anda salin daripada arahan rawatan: {targetL == null ? "Belum direkodkan" : `${targetL} L`}</li>
+      </ul>
+      <p className="mt-3 text-sm leading-6 text-muted-foreground">
+        Angka ini untuk pemantauan. Pasukan dialisis menentukan sasaran rawatan mengikut keadaan klinikal anda.
+      </p>
+    </section>
   )
 }
 

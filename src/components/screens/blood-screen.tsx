@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
 import { LabEditor } from "@/components/lab-editor"
+import { LabTrends } from "@/components/lab-trends"
 import { LoadingBlock, PageHeader } from "@/components/page-header"
 import { StatusBadge } from "@/components/status-badge"
 import { Button } from "@/components/ui/button"
@@ -36,8 +37,8 @@ export function BloodScreen() {
     <div>
       <PageHeader
         eyebrow="Darah"
-        title="Rekod darah dialisis"
-        description="Hemoglobin, kalium, fosfat, albumin, dan URR dibanding dengan sasaran pemantauan yang lazim."
+        title="Rekod darah anda"
+        description="Nilai di bawah ialah rekod yang disimpan. Julat dalam aplikasi ialah panduan am, bukan julat makmal laporan anda. Muat naik fail tidak meneka nombor yang tidak dapat dibaca."
       />
       <LabEditor
         key={`${presetPatientId ?? ""}-${editingId ?? presetLabId ?? "baru"}`}
@@ -45,6 +46,7 @@ export function BloodScreen() {
         presetLabId={editingId ?? presetLabId}
       />
 
+      <LabTrends labs={rows} />
       <section className="mt-8 grid gap-3">
         <h2 className="font-heading text-2xl">Sampel terkini</h2>
         {rows.length === 0 ? (

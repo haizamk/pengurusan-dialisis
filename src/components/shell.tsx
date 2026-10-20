@@ -9,6 +9,8 @@ import {
   Droplets,
   LayoutDashboard,
   Leaf,
+  NotebookPen,
+  Sparkles,
   Users,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -35,6 +37,25 @@ const NAV = [
   { href: "/tip", label: "Tip", icon: Leaf },
 ]
 
+const PATIENT_NAV = [
+  { href: "/", label: "Papan", icon: LayoutDashboard },
+  { href: "/dialisis", label: "Dialisis", icon: Activity },
+  { href: "/darah", label: "Darah", icon: Droplets },
+  { href: "/analisis", label: "Analisis", icon: Sparkles },
+  { href: "/catatan", label: "Catatan", icon: NotebookPen },
+  { href: "/tip", label: "Tip", icon: Leaf },
+]
+
+function useNavItems() {
+  const { profile, applications } = useStore()
+  const waiting = applications.filter((item) => item.status === "menunggu").length
+  if (profile?.role === "super_admin") {
+    return [{ href: "/permohonan", label: waiting > 0 ? `Permohonan (${waiting})` : "Permohonan", icon: ClipboardCheck }]
+  }
+  if (profile?.role === "pesakit") return PATIENT_NAV
+  return NAV
+}
+
 function useActive() {
   const pathname = usePathname()
   return (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href))
@@ -42,17 +63,8 @@ function useActive() {
 
 function SideNav() {
   const active = useActive()
-  const { profile, applications } = useStore()
-  const waiting = applications.filter((item) => item.status === "menunggu").length
-  const items =
-    profile?.role === "super_admin"
-      ? [
-          NAV[0],
-          NAV[1],
-          { href: "/permohonan", label: waiting > 0 ? `Permohonan (${waiting})` : "Permohonan", icon: ClipboardCheck },
-          ...NAV.slice(2),
-        ]
-      : NAV
+  const { profile } = useStore()
+  const items = useNavItems()
   return (
     <nav className="flex flex-1 flex-col gap-1 px-3 py-4">
       {items.map((item) => {
@@ -63,7 +75,7 @@ function SideNav() {
             href={item.href}
             aria-current={active(item.href) ? "page" : undefined}
             className={cn(
-              "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm",
+              "flex min-h-12 items-center gap-3 rounded-xl px-3 py-3 text-sm",
               active(item.href)
                 ? "bg-sidebar-accent text-sidebar-accent-foreground"
                 : "text-sidebar-foreground/80 hover:bg-sidebar-accent/70",
@@ -80,9 +92,11 @@ function SideNav() {
                     ? "Sesi dialisis"
                     : item.label.startsWith("Permohonan")
                       ? item.label
-                      : profile?.role === "pesakit"
-                        ? "Rekod saya"
-                        : "Pesakit"}
+                      : item.label === "Analisis" || item.label === "Catatan"
+                        ? item.label
+                        : profile?.role === "pesakit"
+                          ? "Rekod saya"
+                          : "Pesakit"}
           </Link>
         )
       })}
@@ -93,9 +107,10 @@ function SideNav() {
 function MobileNav() {
   const active = useActive()
   const { profile } = useStore()
+  const items = useNavItems()
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border bg-card/95 backdrop-blur md:hidden">
-      {NAV.map((item) => {
+    <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-3 border-t border-border bg-card/95 backdrop-blur sm:grid-cols-6 md:hidden">
+      {items.map((item) => {
         const Icon = item.icon
         return (
           <Link
@@ -122,11 +137,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
     source,
     error,
     centres,
-    patients,
     centreFilter,
     setCentreFilter,
     resetLocalDemo,
-    seedRemoteDemo,
     busy,
     accountEmail,
     profile,
@@ -135,7 +148,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   } = useStore()
   const [centreOpen, setCentreOpen] = useState(false)
   const [resetOpen, setResetOpen] = useState(false)
-  const canManageCentres = source === "local" || profile?.role === "super_admin"
+  const canManageCentres = source === "local"
   const needsLogin = source === "supabase" && ready && !accountEmail
   const needsLink = source === "supabase" && ready && Boolean(accountEmail) && !profile
   const pending = profile?.role === "pesakit" && profile.status === "menunggu"
@@ -245,27 +258,17 @@ export function Shell({ children }: { children: React.ReactNode }) {
                 </Button>
               ) : null}
               {source === "local" ? (
-                <Button variant="outline" className="h-11" onClick={() => setResetOpen(true)}>
+                <Button variant="outline" className="h-12" onClick={() => setResetOpen(true)}>
                   Set semula contoh
-                </Button>
-              ) : null}
-              {source === "supabase" && profile?.role === "super_admin" && patients.length === 0 ? (
-                <Button
-                  className="h-11"
-                  disabled={busy}
-                  onClick={() => {
-                    seedRemoteDemo()
-                      .then(() => toast.success("Data contoh dimasukkan ke Supabase."))
-                      .catch((reason: unknown) =>
-                        toast.error(reason instanceof Error ? reason.message : "Gagal mengisi Supabase."),
-                      )
-                  }}
-                >
-                  Isi data contoh
                 </Button>
               ) : null}
             </div>
           </div>
+          {source === "local" ? (
+            <p className="border-t border-border px-4 py-2 text-sm leading-6 text-muted-foreground md:px-8">
+              Mod pengembangan: data contoh pada pelayar ini, bukan rekod pesakit sebenar.
+            </p>
+          ) : null}
           {error ? (
             <p className="border-t border-destructive/20 bg-destructive/10 px-4 py-2 text-sm text-destructive md:px-8">
               {source === "supabase"

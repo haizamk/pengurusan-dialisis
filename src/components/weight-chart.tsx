@@ -1,10 +1,11 @@
 "use client"
 
+import { useState } from "react"
 import {
   CartesianGrid,
+  Legend,
   Line,
   LineChart,
-  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -13,17 +14,41 @@ import {
 import { formatDate } from "@/lib/format"
 import type { DialysisSession } from "@/lib/types"
 
+type RangeKey = "hari" | "bulan" | "enam" | "tahun" | "semua"
+
+const RANGES: { key: RangeKey; label: string; days: number | null }[] = [
+  { key: "hari", label: "Harian", days: 14 },
+  { key: "bulan", label: "Bulanan", days: 31 },
+  { key: "enam", label: "6 bulan", days: 183 },
+  { key: "tahun", label: "Setahun", days: 366 },
+  { key: "semua", label: "Semua", days: null },
+]
+
+function within(date: string, days: number | null) {
+  if (days == null) return true
+  const then = new Date(`${date}T00:00:00`)
+  const limit = new Date()
+  limit.setDate(limit.getDate() - days)
+  return then >= limit
+}
+
 export function WeightChart({ sessions }: { sessions: DialysisSession[] }) {
+  const [range, setRange] = useState<RangeKey>("semua")
+  const chosen = RANGES.find((item) => item.key === range) ?? RANGES[4]
+  const visible = [...sessions]
+    .filter((session) => within(session.sessionDate, chosen.days))
+    .sort((a, b) => a.sessionDate.localeCompare(b.sessionDate))
+
   if (sessions.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
-        Carta berat akan muncul selepas sesi pertama direkodkan.
+      <p className="text-sm leading-6 text-muted-foreground">
+        Tiada data tersedia. Carta berat akan muncul selepas sesi pertama direkodkan.
       </p>
     )
   }
 
-  const data = sessions.map((session) => ({
-    label: formatDate(session.sessionDate).replace(/\s\d{4}$/, ""),
+  const data = visible.map((session) => ({
+    label: formatDate(session.sessionDate),
     tiba: session.arrivalWeightKg,
     selepas: session.postWeightKg,
     kering: session.dryWeightKg,
@@ -35,41 +60,45 @@ export function WeightChart({ sessions }: { sessions: DialysisSession[] }) {
   const max = Math.ceil(Math.max(...numbers) + 1)
 
   return (
-    <div className="h-72 w-full">
-      <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
-            <CartesianGrid stroke="#e4dccb" vertical={false} />
-            <XAxis dataKey="label" tick={{ fill: "#5c675f", fontSize: 12 }} axisLine={false} tickLine={false} />
-            <YAxis
-              domain={[min, max]}
-              tick={{ fill: "#5c675f", fontSize: 12 }}
-              axisLine={false}
-              tickLine={false}
-              unit=" kg"
-            />
-            <Tooltip
-              formatter={(value, name) => [
-                value == null ? "—" : `${value} kg`,
-                name === "tiba" ? "Berat tiba" : name === "selepas" ? "Berat selepas" : "Berat kering",
-              ]}
-            />
-            <ReferenceLine y={data.at(-1)?.kering} stroke="#9a6a32" strokeDasharray="4 4" />
-            <Line type="monotone" dataKey="tiba" stroke="#0e6b62" strokeWidth={2.4} dot={{ r: 3 }} />
-            <Line type="monotone" dataKey="selepas" stroke="#c47b2b" strokeWidth={2.4} dot={{ r: 3 }} connectNulls />
-            <Line type="monotone" dataKey="kering" stroke="#1c2b2a" strokeDasharray="5 4" strokeWidth={1.4} dot={false} />
-          </LineChart>
-        </ResponsiveContainer>
-      <div className="mt-2 flex flex-wrap gap-4 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-1.5">
-          <i className="h-0.5 w-4 bg-[#0e6b62]" /> Berat tiba
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <i className="h-0.5 w-4 bg-[#c47b2b]" /> Berat selepas
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <i className="h-0.5 w-4 border-t border-dashed border-[#1c2b2a]" /> Berat kering
-        </span>
+    <div>
+      <div className="mb-3 flex flex-wrap gap-2">
+        {RANGES.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            className={`min-h-12 rounded-lg px-3 text-sm ${item.key === range ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"}`}
+            onClick={() => setRange(item.key)}
+          >
+            {item.label}
+          </button>
+        ))}
       </div>
+      {data.length === 0 ? (
+        <p className="text-sm leading-6 text-muted-foreground">Tiada sesi dalam julat tarikh ini.</p>
+      ) : (
+        <div className="h-80 w-full min-w-0">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+              <CartesianGrid stroke="oklch(0.46 0.03 230)" vertical={false} />
+              <XAxis dataKey="label" tick={{ fill: "oklch(0.82 0.02 200)", fontSize: 11 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+              <YAxis domain={[min, max]} tick={{ fill: "oklch(0.82 0.02 200)", fontSize: 12 }} axisLine={false} tickLine={false} unit=" kg" width={64} />
+              <Tooltip
+                formatter={(value, name) => [
+                  value == null || value === "" ? "Tiada data" : `${value} kg`,
+                  name === "tiba" ? "Berat sebelum" : name === "selepas" ? "Berat selepas" : "Berat kering sesi",
+                ]}
+              />
+              <Legend />
+              <Line type="linear" name="Berat sebelum" dataKey="tiba" stroke="oklch(0.80 0.12 190)" strokeWidth={2.4} dot={{ r: 3 }} connectNulls={false} />
+              <Line type="linear" name="Berat selepas" dataKey="selepas" stroke="oklch(0.78 0.12 70)" strokeWidth={2.4} dot={{ r: 3 }} connectNulls={false} />
+              <Line type="linear" name="Berat kering" dataKey="kering" stroke="oklch(0.86 0.02 200)" strokeDasharray="5 4" strokeWidth={1.6} dot={{ r: 2 }} connectNulls={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+        Setiap titik ialah sesi yang disimpan. Berat kering mengikut sesi itu, bukan satu garis tetap. Titik yang tiada dibiarkan kosong.
+      </p>
     </div>
   )
 }

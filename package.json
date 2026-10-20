@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test src/lib/uf.test.ts src/lib/blood.test.ts"
+    "test": "tsx --test src/lib/uf.test.ts src/lib/blood.test.ts src/lib/monitoring.test.ts src/lib/insight.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

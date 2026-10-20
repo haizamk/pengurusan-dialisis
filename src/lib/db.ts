@@ -55,6 +55,12 @@ type SessionRow = {
   diastolic_post: number | null
   notes: string
   created_at: string
+  session_time?: string | null
+  prescribed_duration_min?: number | null
+  machine_uf_ml?: number | null
+  uf_target_l?: number | null
+  symptoms?: string | null
+  updated_at?: string | null
 }
 
 type LabRow = {
@@ -161,6 +167,52 @@ function sessionFromRow(row: SessionRow): DialysisSession {
     diastolicPost: row.diastolic_post,
     notes: row.notes,
     createdAt: row.created_at,
+    sessionTime: row.session_time ?? null,
+    prescribedDurationMin: row.prescribed_duration_min ?? null,
+    machineUfMl: row.machine_uf_ml == null ? null : Number(row.machine_uf_ml),
+    ufTargetL: row.uf_target_l == null ? null : Number(row.uf_target_l),
+    symptoms: row.symptoms ?? "",
+    updatedAt: row.updated_at ?? null,
+  }
+}
+
+const EXTRA_KEY = "ppd.session-extra.v1"
+
+function readExtras(): Record<string, Partial<DialysisSession>> {
+  if (typeof window === "undefined") return {}
+  try {
+    const raw = window.localStorage.getItem(EXTRA_KEY)
+    return raw ? (JSON.parse(raw) as Record<string, Partial<DialysisSession>>) : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeExtra(session: DialysisSession) {
+  if (typeof window === "undefined") return
+  const all = readExtras()
+  all[session.id] = {
+    sessionTime: session.sessionTime ?? null,
+    prescribedDurationMin: session.prescribedDurationMin ?? null,
+    machineUfMl: session.machineUfMl ?? null,
+    ufTargetL: session.ufTargetL ?? null,
+    symptoms: session.symptoms ?? "",
+    updatedAt: session.updatedAt ?? null,
+  }
+  window.localStorage.setItem(EXTRA_KEY, JSON.stringify(all))
+}
+
+function withExtra(session: DialysisSession): DialysisSession {
+  const extra = readExtras()[session.id]
+  if (!extra) return session
+  return {
+    ...session,
+    sessionTime: session.sessionTime ?? extra.sessionTime ?? null,
+    prescribedDurationMin: session.prescribedDurationMin ?? extra.prescribedDurationMin ?? null,
+    machineUfMl: session.machineUfMl ?? extra.machineUfMl ?? null,
+    ufTargetL: session.ufTargetL ?? extra.ufTargetL ?? null,
+    symptoms: session.symptoms || extra.symptoms || "",
+    updatedAt: session.updatedAt ?? extra.updatedAt ?? null,
   }
 }
 
@@ -241,7 +293,7 @@ async function fetchRemote(): Promise<Database> {
   return {
     centres: (centres.data as CentreRow[]).map(centreFromRow),
     patients: (patients.data as PatientRow[]).map(patientFromRow),
-    sessions: (sessions.data as SessionRow[]).map(sessionFromRow),
+    sessions: (sessions.data as SessionRow[]).map((row) => withExtra(sessionFromRow(row))),
     labs: (labs.data as LabRow[]).map(labFromRow),
   }
 }
@@ -406,6 +458,10 @@ export async function approveApplication(account: AccountProfile) {
     throw new Error("Permohonan tidak lengkap. Pesakit perlu mendaftar semula dengan centre, berat kering, dan tapak.")
   }
   const { supabase } = await requireSessionUser()
+  const rpc = await supabase.rpc("approve_registration", { p_user: account.userId })
+  if (!rpc.error) return
+  const missing = /schema cache|could not find the function|approve_registration/i.test(rpc.error.message)
+  if (!missing) throw new Error(explainSupabaseError(rpc.error.message))
   const id = crypto.randomUUID()
   const patient: Patient = {
     id,
@@ -486,8 +542,25 @@ export async function persistPatient(patient: Patient, mode: "insert" | "update"
 
 export async function persistSession(session: DialysisSession, mode: "insert" | "update") {
   const supabase = getSupabase()
+  writeExtra(session)
   if (!supabase) return
   const row = sessionToRow(session)
+  const extended = {
+    ...row,
+    session_time: session.sessionTime ?? null,
+    prescribed_duration_min: session.prescribedDurationMin ?? null,
+    machine_uf_ml: session.machineUfMl ?? null,
+    uf_target_l: session.ufTargetL ?? null,
+    symptoms: session.symptoms ?? "",
+    updated_at: new Date().toISOString(),
+  }
+  const first = mode === "insert"
+    ? await supabase.from("dialysis_sessions").insert(extended)
+    : await supabase.from("dialysis_sessions").update(extended).eq("id", session.id)
+  if (!first.error) return
+  if (!/column|schema cache/i.test(first.error.message)) {
+    throw new Error(`dialysis_sessions: ${first.error.message}`)
+  }
   if (mode === "insert") {
     await requireWrite("dialysis_sessions", mode, () => supabase.from("dialysis_sessions").insert(row))
   } else {

@@ -77,6 +77,12 @@ export type DialysisSession = {
   diastolicPost: number | null
   notes: string
   createdAt: string
+  sessionTime?: string | null
+  prescribedDurationMin?: number | null
+  machineUfMl?: number | null
+  ufTargetL?: number | null
+  symptoms?: string
+  updatedAt?: string | null
 }
 
 export type BloodRecord = {

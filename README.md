@@ -41,6 +41,7 @@ npm run lint
 5. Isi `NEXT_PUBLIC_SUPABASE_URL` (bermula dengan `https://`, tanpa awalan `db.`) dan `NEXT_PUBLIC_SUPABASE_ANON_KEY` (kunci publishable).
 6. Buka laman, tekan **Daftar super admin**, dan cipta emel serta kata laluan. Butang **Jana** membuat kata laluan. Akaun ini hanya boleh dicipta sekali.
 7. Pesakit tekan **Daftar permohonan pesakit** dan memilih kata laluan sendiri. Super admin meluluskan di halaman **Permohonan**. Selepas itu pesakit log masuk dan mengisi sesi serta rekod darah sendiri.
+8. Jalankan `supabase/portal.sql` sekali. Ia menambah medan sesi dan menutup bacaan rekod kesihatan oleh super admin. Rekod sedia ada tidak dipadam.
 
 Pesakit yang diluluskan hanya membaca dan menulis rekod sendiri. Super admin melihat semua rekod dan permohonan. Kunci publishable tanpa sesi tidak boleh membaca rekod klinikal.
 
