@@ -65,7 +65,7 @@ const empty: Database = { centres: [], patients: [], sessions: [], labs: [] }
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [data, setData] = useState<Database>(empty)
-  const [source, setSource] = useState<DataSource>("local")
+  const [source, setSource] = useState<DataSource>(() => (isSupabaseConfigured() ? "supabase" : "local"))
   const [error, setError] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
   const [busy, setBusy] = useState(false)

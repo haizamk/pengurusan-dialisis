@@ -118,20 +118,28 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [centreOpen, setCentreOpen] = useState(false)
   const [resetOpen, setResetOpen] = useState(false)
   const canManageCentres = source === "local" || profile?.role === "pentadbir"
-
-  if (!ready) {
-    return (
-      <div className="flex min-h-dvh items-center justify-center text-sm text-muted-foreground">
-        Memuatkan rekod…
-      </div>
-    )
-  }
-
-  if (source === "supabase" && !accountEmail) return <LoginScreen />
-  if (source === "supabase" && !profile) return <AccountGate />
+  const needsLogin = source === "supabase" && ready && !accountEmail
+  const needsLink = source === "supabase" && ready && Boolean(accountEmail) && !profile
+  const showApp = ready && !needsLogin && !needsLink
 
   return (
-    <div className="min-h-dvh bg-background">
+    <>
+      {!ready ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background text-sm text-muted-foreground">
+          Memuatkan rekod…
+        </div>
+      ) : null}
+      {needsLogin ? (
+        <div className="fixed inset-0 z-50 overflow-auto bg-background">
+          <LoginScreen />
+        </div>
+      ) : null}
+      {needsLink ? (
+        <div className="fixed inset-0 z-50 overflow-auto bg-background">
+          <AccountGate />
+        </div>
+      ) : null}
+    <div className={showApp ? "min-h-dvh bg-background" : "hidden"} aria-hidden={showApp ? undefined : true}>
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col bg-sidebar text-sidebar-foreground md:flex">
         <div className="border-b border-sidebar-border px-5 py-6">
           <p className="font-heading text-[1.65rem] leading-none text-sidebar-primary">PPD</p>
@@ -264,5 +272,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </DialogContent>
       </Dialog>
     </div>
+    </>
   )
 }

@@ -31,6 +31,9 @@ export function getSupabase() {
 export function translateAuthError(message: string) {
   const lower = message.toLowerCase()
   if (lower.includes("invalid login")) return "Emel atau kata laluan tidak sepadan."
+  if (lower.includes("failed to fetch") || lower.includes("network")) {
+    return "Tidak dapat menghubungi Supabase. Semak URL projek dan sambungan."
+  }
   if (lower.includes("email not confirmed")) {
     return "Emel belum disahkan. Cipta pengguna dari Authentication → Users supaya akaun terus aktif."
   }
