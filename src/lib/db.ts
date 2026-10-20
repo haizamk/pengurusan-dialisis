@@ -250,6 +250,9 @@ const emptyDatabase: Database = { centres: [], patients: [], sessions: [], labs:
 
 export function explainSupabaseError(message: string) {
   const lower = message.toLowerCase()
+  if (lower.includes("failed to fetch") || lower.includes("network")) {
+    return "Tidak dapat menghubungi Supabase. Semak URL projek dan sambungan."
+  }
   if (
     (lower.includes("accounts") || lower.includes("super_admin_exists")) &&
     (lower.includes("schema cache") || lower.includes("does not exist") || lower.includes("relation") || lower.includes("function"))
