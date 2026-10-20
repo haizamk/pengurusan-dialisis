@@ -7,6 +7,8 @@ import type {
   DataSource,
   DialysisSession,
   Patient,
+  StaffProfile,
+  StaffRole,
 } from "@/lib/types"
 
 const STORAGE_KEY = "ppd.v1"
@@ -242,6 +244,34 @@ async function fetchRemote(): Promise<Database> {
   }
 }
 
+const emptyDatabase: Database = { centres: [], patients: [], sessions: [], labs: [] }
+
+export function explainSupabaseError(message: string) {
+  const lower = message.toLowerCase()
+  if (lower.includes("staff") && (lower.includes("schema cache") || lower.includes("does not exist") || lower.includes("relation"))) {
+    return "Jadual staf belum wujud. Jalankan supabase/access.sql dalam SQL Editor, kemudian muat semula."
+  }
+  return message
+}
+
+export async function fetchStaffProfile(userId: string, email: string): Promise<StaffProfile | null> {
+  const supabase = getSupabase()
+  if (!supabase) return null
+  const staff = await supabase.from("staff").select("full_name, role").eq("user_id", userId).maybeSingle()
+  if (staff.error) throw new Error(explainSupabaseError(staff.error.message))
+  if (!staff.data) return null
+  const role = staff.data.role === "pentadbir" ? "pentadbir" : "staf"
+  const links = await supabase.from("staff_centres").select("centre_id").eq("user_id", userId)
+  if (links.error) throw new Error(explainSupabaseError(links.error.message))
+  return {
+    userId,
+    email,
+    fullName: String(staff.data.full_name),
+    role: role satisfies StaffRole,
+    centreIds: (links.data ?? []).map((row) => String(row.centre_id)),
+  }
+}
+
 export async function loadDatabase(): Promise<LoadResult> {
   if (isSupabaseConfigured()) {
     try {
@@ -250,9 +280,9 @@ export async function loadDatabase(): Promise<LoadResult> {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Gagal membaca Supabase."
       return {
-        source: "local",
-        data: readLocal() ?? createSeed(),
-        error: message,
+        source: "supabase",
+        data: emptyDatabase,
+        error: explainSupabaseError(message),
       }
     }
   }

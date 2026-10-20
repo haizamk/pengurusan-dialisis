@@ -11,6 +11,7 @@ import {
   Users,
 } from "lucide-react"
 import { toast } from "sonner"
+import { AccountGate, LoginScreen } from "@/components/auth-screens"
 import { ChoiceSelect } from "@/components/choice-select"
 import { CentreDialog } from "@/components/patient-dialog"
 import { Button } from "@/components/ui/button"
@@ -110,9 +111,24 @@ export function Shell({ children }: { children: React.ReactNode }) {
     resetLocalDemo,
     seedRemoteDemo,
     busy,
+    accountEmail,
+    profile,
+    signOut,
   } = useStore()
   const [centreOpen, setCentreOpen] = useState(false)
   const [resetOpen, setResetOpen] = useState(false)
+  const canManageCentres = source === "local" || profile?.role === "pentadbir"
+
+  if (!ready) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center text-sm text-muted-foreground">
+        Memuatkan rekod…
+      </div>
+    )
+  }
+
+  if (source === "supabase" && !accountEmail) return <LoginScreen />
+  if (source === "supabase" && !profile) return <AccountGate />
 
   return (
     <div className="min-h-dvh bg-background">
@@ -129,7 +145,24 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </Suspense>
         <div className="space-y-3 border-t border-sidebar-border px-4 py-4 text-xs leading-5 text-sidebar-foreground/70">
           <p>{source === "supabase" ? "Disambung ke Supabase." : "Data contoh disimpan pada pelayar ini."}</p>
-          <p>Next.js · Supabase · Netlify</p>
+          {profile ? (
+            <p>
+              {profile.fullName}
+              <span className="block">{profile.role === "pentadbir" ? "Pentadbir" : "Staf"} · {accountEmail}</span>
+            </p>
+          ) : null}
+          {source === "supabase" ? (
+            <Button
+              variant="outline"
+              className="h-9 w-full border-sidebar-border bg-transparent text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              disabled={busy}
+              onClick={() => void signOut()}
+            >
+              Keluar
+            </Button>
+          ) : (
+            <p>Next.js · Supabase · Netlify</p>
+          )}
         </div>
       </aside>
 
@@ -157,15 +190,22 @@ export function Shell({ children }: { children: React.ReactNode }) {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" className="h-11" onClick={() => setCentreOpen(true)}>
-                Centre baharu
-              </Button>
+              {source === "supabase" ? (
+                <Button variant="outline" className="h-11 md:hidden" disabled={busy} onClick={() => void signOut()}>
+                  Keluar
+                </Button>
+              ) : null}
+              {canManageCentres ? (
+                <Button variant="outline" className="h-11" onClick={() => setCentreOpen(true)}>
+                  Centre baharu
+                </Button>
+              ) : null}
               {source === "local" ? (
                 <Button variant="outline" className="h-11" onClick={() => setResetOpen(true)}>
                   Set semula contoh
                 </Button>
               ) : null}
-              {source === "supabase" && ready && patients.length === 0 ? (
+              {source === "supabase" && profile?.role === "pentadbir" && patients.length === 0 ? (
                 <Button
                   className="h-11"
                   disabled={busy}
@@ -184,7 +224,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </div>
           {error ? (
             <p className="border-t border-destructive/20 bg-destructive/10 px-4 py-2 text-sm text-destructive md:px-8">
-              Supabase tidak dapat dibaca ({error}). Aplikasi menggunakan data tempatan.
+              {source === "supabase"
+                ? `Supabase tidak dapat dibaca (${error}).`
+                : `Supabase tidak dapat dibaca (${error}). Aplikasi menggunakan data tempatan.`}
             </p>
           ) : null}
         </header>

@@ -11,6 +11,7 @@ import {
 import {
   clearLocal,
   deleteRemote,
+  fetchStaffProfile,
   loadDatabase,
   persistCentre,
   persistLab,
@@ -20,6 +21,7 @@ import {
   writeLocal,
 } from "@/lib/db"
 import { createSeed } from "@/lib/seed"
+import { isSupabaseConfigured, signInWithPassword, signOut as supabaseSignOut, watchSession } from "@/lib/supabase"
 import type {
   BloodRecord,
   Centre,
@@ -27,7 +29,9 @@ import type {
   DataSource,
   DialysisSession,
   Patient,
+  StaffProfile,
 } from "@/lib/types"
+import type { Session } from "@supabase/supabase-js"
 
 type StoreValue = {
   ready: boolean
@@ -49,6 +53,10 @@ type StoreValue = {
   removeLab: (id: string) => Promise<void>
   resetLocalDemo: () => void
   seedRemoteDemo: () => Promise<void>
+  accountEmail: string | null
+  profile: StaffProfile | null
+  signIn: (email: string, password: string) => Promise<void>
+  signOut: () => Promise<void>
 }
 
 const StoreContext = createContext<StoreValue | null>(null)
@@ -62,29 +70,73 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false)
   const [busy, setBusy] = useState(false)
   const [centreFilter, setCentreFilter] = useState("all")
+  const [accountEmail, setAccountEmail] = useState<string | null>(null)
+  const [profile, setProfile] = useState<StaffProfile | null>(null)
 
   useEffect(() => {
-    let cancelled = false
-    loadDatabase()
-      .then((result) => {
-        if (cancelled) return
-        setData(result.data)
-        setSource(result.source)
-        setError(result.error)
-        if (result.source === "local") writeLocal(result.data)
+    if (!isSupabaseConfigured()) {
+      let cancelled = false
+      loadDatabase()
+        .then((result) => {
+          if (cancelled) return
+          setData(result.data)
+          setSource(result.source)
+          setError(result.error)
+          if (result.source === "local") writeLocal(result.data)
+          setReady(true)
+        })
+        .catch((error: unknown) => {
+          if (cancelled) return
+          const seeded = createSeed()
+          writeLocal(seeded)
+          setData(seeded)
+          setSource("local")
+          setError(error instanceof Error ? error.message : "Gagal memuatkan data.")
+          setReady(true)
+        })
+      return () => {
+        cancelled = true
+      }
+    }
+
+    let ticket = 0
+    const refresh = (session: Session | null) => {
+      const current = ++ticket
+      if (!session) {
+        setAccountEmail(null)
+        setProfile(null)
+        setData(empty)
+        setSource("supabase")
+        setError(null)
         setReady(true)
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return
-        const seeded = createSeed()
-        writeLocal(seeded)
-        setData(seeded)
-        setSource("local")
-        setError(error instanceof Error ? error.message : "Gagal memuatkan data.")
-        setReady(true)
-      })
+        return
+      }
+      const email = session.user.email ?? ""
+      setAccountEmail(email)
+      setSource("supabase")
+      void (async () => {
+        try {
+          const nextProfile = await fetchStaffProfile(session.user.id, email)
+          const result = await loadDatabase()
+          if (current !== ticket) return
+          setProfile(nextProfile)
+          setData(result.data)
+          setError(result.error)
+        } catch (error: unknown) {
+          if (current !== ticket) return
+          setProfile(null)
+          setData(empty)
+          setError(error instanceof Error ? error.message : "Gagal memuatkan data.")
+        } finally {
+          if (current === ticket) setReady(true)
+        }
+      })()
+    }
+
+    const stop = watchSession(refresh)
     return () => {
-      cancelled = true
+      ticket += 1
+      stop()
     }
   }, [])
 
@@ -218,8 +270,35 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           setBusy(false)
         }
       },
+      accountEmail,
+      profile,
+      signIn: async (email, password) => {
+        setBusy(true)
+        setError(null)
+        try {
+          await signInWithPassword(email, password)
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : "Log masuk gagal."
+          setError(message)
+          throw error
+        } finally {
+          setBusy(false)
+        }
+      },
+      signOut: async () => {
+        setBusy(true)
+        try {
+          await supabaseSignOut()
+          setAccountEmail(null)
+          setProfile(null)
+          setData(empty)
+          setError(null)
+        } finally {
+          setBusy(false)
+        }
+      },
     }),
-    [busy, centreFilter, commitLocal, data, error, ready, run, source],
+    [accountEmail, busy, centreFilter, commitLocal, data, error, profile, ready, run, source],
   )
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>

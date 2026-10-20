@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js"
+import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js"
 
 export function supabaseUrl() {
   return process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ?? ""
@@ -18,8 +18,47 @@ export function getSupabase() {
   if (!isSupabaseConfigured()) return null
   if (!cached) {
     cached = createClient(supabaseUrl(), supabaseAnonKey(), {
-      auth: { persistSession: false },
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
     })
   }
   return cached
+}
+
+export function translateAuthError(message: string) {
+  const lower = message.toLowerCase()
+  if (lower.includes("invalid login")) return "Emel atau kata laluan tidak sepadan."
+  if (lower.includes("email not confirmed")) {
+    return "Emel belum disahkan. Cipta pengguna dari Authentication → Users supaya akaun terus aktif."
+  }
+  return message
+}
+
+export async function signInWithPassword(email: string, password: string) {
+  const supabase = getSupabase()
+  if (!supabase) throw new Error("Supabase tidak dikonfigurasi.")
+  const { error } = await supabase.auth.signInWithPassword({
+    email: email.trim(),
+    password,
+  })
+  if (error) throw new Error(translateAuthError(error.message))
+}
+
+export async function signOut() {
+  const supabase = getSupabase()
+  if (!supabase) return
+  const { error } = await supabase.auth.signOut()
+  if (error) throw new Error(error.message)
+}
+
+export function watchSession(onChange: (session: Session | null) => void) {
+  const supabase = getSupabase()
+  if (!supabase) return () => {}
+  const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+    setTimeout(() => onChange(session), 0)
+  })
+  return () => data.subscription.unsubscribe()
 }

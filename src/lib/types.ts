@@ -1,6 +1,15 @@
 export type Sex = "lelaki" | "perempuan"
 export type AccessType = "fistula" | "graft" | "kateter"
 export type DataSource = "local" | "supabase"
+export type StaffRole = "pentadbir" | "staf"
+
+export type StaffProfile = {
+  userId: string
+  email: string
+  fullName: string
+  role: StaffRole
+  centreIds: string[]
+}
 
 export type Centre = {
   id: string
