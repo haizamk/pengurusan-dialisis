@@ -1,14 +1,16 @@
 import { createSeed } from "@/lib/seed"
-import { getSupabase, isSupabaseConfigured } from "@/lib/supabase"
+import { getSupabase, isSupabaseConfigured, translateAuthError } from "@/lib/supabase"
 import type {
+  AccountProfile,
+  AccountRole,
+  AccountStatus,
   BloodRecord,
   Centre,
   Database,
   DataSource,
   DialysisSession,
   Patient,
-  StaffProfile,
-  StaffRole,
+  PatientSignup,
 } from "@/lib/types"
 
 const STORAGE_KEY = "ppd.v1"
@@ -248,28 +250,188 @@ const emptyDatabase: Database = { centres: [], patients: [], sessions: [], labs:
 
 export function explainSupabaseError(message: string) {
   const lower = message.toLowerCase()
-  if (lower.includes("staff") && (lower.includes("schema cache") || lower.includes("does not exist") || lower.includes("relation"))) {
-    return "Jadual staf belum wujud. Jalankan supabase/access.sql dalam SQL Editor, kemudian muat semula."
+  if (
+    (lower.includes("accounts") || lower.includes("super_admin_exists")) &&
+    (lower.includes("schema cache") || lower.includes("does not exist") || lower.includes("relation") || lower.includes("function"))
+  ) {
+    return "Jadual akaun belum wujud. Jalankan supabase/access.sql dalam SQL Editor, kemudian muat semula."
   }
   return message
 }
 
-export async function fetchStaffProfile(userId: string, email: string): Promise<StaffProfile | null> {
+type AccountRow = {
+  user_id: string
+  role: string
+  status: string
+  full_name: string
+  email: string
+  phone: string | null
+  sex: Patient["sex"] | null
+  date_of_birth: string | null
+  centre_id: string | null
+  dry_weight_kg: number | null
+  access_type: Patient["accessType"] | null
+  access_site: string | null
+  schedule: string | null
+  diagnosis: string | null
+  patient_id: string | null
+}
+
+function accountFromRow(row: AccountRow): AccountProfile {
+  const role: AccountRole = row.role === "super_admin" ? "super_admin" : "pesakit"
+  const status: AccountStatus = row.status === "lulus" || row.status === "tolak" ? row.status : "menunggu"
+  return {
+    userId: row.user_id,
+    email: row.email,
+    fullName: row.full_name,
+    role,
+    status,
+    patientId: row.patient_id,
+    phone: row.phone ?? "",
+    sex: row.sex,
+    dateOfBirth: row.date_of_birth,
+    centreId: row.centre_id,
+    dryWeightKg: row.dry_weight_kg == null ? null : Number(row.dry_weight_kg),
+    accessType: row.access_type,
+    accessSite: row.access_site ?? "",
+    schedule: row.schedule ?? "",
+    diagnosis: row.diagnosis ?? "",
+  }
+}
+
+export async function listCentres(): Promise<Centre[]> {
+  const supabase = getSupabase()
+  if (!supabase) return []
+  const result = await supabase.from("centres").select("*").order("name")
+  if (result.error) throw new Error(explainSupabaseError(result.error.message))
+  return (result.data as CentreRow[]).map(centreFromRow)
+}
+
+export async function superAdminExists(): Promise<boolean> {
+  const supabase = getSupabase()
+  if (!supabase) return false
+  const result = await supabase.rpc("super_admin_exists")
+  if (result.error) throw new Error(explainSupabaseError(result.error.message))
+  return Boolean(result.data)
+}
+
+export async function fetchAccount(userId: string, email: string): Promise<AccountProfile | null> {
   const supabase = getSupabase()
   if (!supabase) return null
-  const staff = await supabase.from("staff").select("full_name, role").eq("user_id", userId).maybeSingle()
-  if (staff.error) throw new Error(explainSupabaseError(staff.error.message))
-  if (!staff.data) return null
-  const role = staff.data.role === "pentadbir" ? "pentadbir" : "staf"
-  const links = await supabase.from("staff_centres").select("centre_id").eq("user_id", userId)
-  if (links.error) throw new Error(explainSupabaseError(links.error.message))
-  return {
-    userId,
-    email,
-    fullName: String(staff.data.full_name),
-    role: role satisfies StaffRole,
-    centreIds: (links.data ?? []).map((row) => String(row.centre_id)),
+  const result = await supabase.from("accounts").select("*").eq("user_id", userId).maybeSingle()
+  if (result.error) throw new Error(explainSupabaseError(result.error.message))
+  if (!result.data) return null
+  const account = accountFromRow(result.data as AccountRow)
+  return { ...account, email: account.email || email }
+}
+
+export async function listApplications(): Promise<AccountProfile[]> {
+  const supabase = getSupabase()
+  if (!supabase) return []
+  const result = await supabase.from("accounts").select("*").eq("role", "pesakit").order("created_at", { ascending: true })
+  if (result.error) throw new Error(explainSupabaseError(result.error.message))
+  return (result.data as AccountRow[]).map(accountFromRow)
+}
+
+async function requireSessionUser() {
+  const supabase = getSupabase()
+  if (!supabase) throw new Error("Supabase tidak dikonfigurasi.")
+  const { data, error } = await supabase.auth.getSession()
+  if (error) throw new Error(translateAuthError(error.message))
+  if (!data.session?.user) throw new Error("Sesi log masuk tidak dijumpai.")
+  return { supabase, user: data.session.user }
+}
+
+export async function registerPatient(input: PatientSignup) {
+  if (input.password.length < 8) throw new Error("Kata laluan sekurang-kurangnya 8 aksara.")
+  const supabase = getSupabase()
+  if (!supabase) throw new Error("Supabase tidak dikonfigurasi.")
+  const { data, error } = await supabase.auth.signUp({
+    email: input.email.trim(),
+    password: input.password,
+    options: { data: { full_name: input.fullName.trim() } },
+  })
+  if (error) throw new Error(translateAuthError(error.message))
+  if (!data.session || !data.user) {
+    throw new Error(
+      "Akaun belum aktif. Dalam Supabase, buka Authentication → Providers → Email dan matikan Confirm email, kemudian daftar semula.",
+    )
   }
+  const inserted = await supabase.from("accounts").insert({
+    user_id: data.user.id,
+    role: "pesakit",
+    status: "menunggu",
+    full_name: input.fullName.trim(),
+    email: input.email.trim(),
+    phone: input.phone.trim(),
+    sex: input.sex,
+    date_of_birth: input.dateOfBirth,
+    centre_id: input.centreId,
+    dry_weight_kg: input.dryWeightKg,
+    access_type: input.accessType,
+    access_site: input.accessSite.trim(),
+    schedule: input.schedule.trim(),
+    diagnosis: input.diagnosis.trim(),
+  })
+  if (inserted.error) throw new Error(explainSupabaseError(inserted.error.message))
+}
+
+export async function registerSuperAdmin(fullName: string, email: string, password: string) {
+  if (password.length < 8) throw new Error("Kata laluan sekurang-kurangnya 8 aksara.")
+  const supabase = getSupabase()
+  if (!supabase) throw new Error("Supabase tidak dikonfigurasi.")
+  const { data, error } = await supabase.auth.signUp({
+    email: email.trim(),
+    password,
+    options: { data: { full_name: fullName.trim() } },
+  })
+  if (error) throw new Error(translateAuthError(error.message))
+  if (!data.session) {
+    throw new Error(
+      "Akaun belum aktif. Dalam Supabase, buka Authentication → Providers → Email dan matikan Confirm email, kemudian daftar semula.",
+    )
+  }
+  const claimed = await supabase.rpc("claim_super_admin", { p_name: fullName.trim() })
+  if (claimed.error) {
+    await supabase.auth.signOut()
+    throw new Error(explainSupabaseError(claimed.error.message))
+  }
+}
+
+export async function approveApplication(account: AccountProfile) {
+  if (!account.sex || !account.dateOfBirth || !account.centreId || !account.accessType || !account.dryWeightKg) {
+    throw new Error("Permohonan tidak lengkap. Pesakit perlu mendaftar semula dengan centre, berat kering, dan tapak.")
+  }
+  const { supabase } = await requireSessionUser()
+  const id = crypto.randomUUID()
+  const patient: Patient = {
+    id,
+    fullName: account.fullName,
+    mrn: `PPD-${id.slice(0, 8).toUpperCase()}`,
+    sex: account.sex,
+    dateOfBirth: account.dateOfBirth,
+    phone: account.phone,
+    centreId: account.centreId,
+    dryWeightKg: account.dryWeightKg,
+    accessType: account.accessType,
+    accessSite: account.accessSite,
+    schedule: account.schedule,
+    diagnosis: account.diagnosis,
+    notes: "Didaftarkan sendiri dan diluluskan super admin.",
+    active: true,
+  }
+  await persistPatient(patient, "insert")
+  const updated = await supabase
+    .from("accounts")
+    .update({ status: "lulus", patient_id: id })
+    .eq("user_id", account.userId)
+  if (updated.error) throw new Error(explainSupabaseError(updated.error.message))
+}
+
+export async function rejectApplication(userId: string) {
+  const { supabase } = await requireSessionUser()
+  const updated = await supabase.from("accounts").update({ status: "tolak" }).eq("user_id", userId)
+  if (updated.error) throw new Error(explainSupabaseError(updated.error.message))
 }
 
 export async function loadDatabase(): Promise<LoadResult> {

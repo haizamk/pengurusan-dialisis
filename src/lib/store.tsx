@@ -6,30 +6,38 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react"
 import {
+  approveApplication,
   clearLocal,
   deleteRemote,
-  fetchStaffProfile,
+  fetchAccount,
+  listApplications,
   loadDatabase,
   persistCentre,
   persistLab,
   persistPatient,
   persistSession,
   pushDatabase,
+  registerPatient,
+  registerSuperAdmin,
+  rejectApplication,
+  superAdminExists,
   writeLocal,
 } from "@/lib/db"
 import { createSeed } from "@/lib/seed"
-import { isSupabaseConfigured, signInWithPassword, signOut as supabaseSignOut, watchSession } from "@/lib/supabase"
+import { getSupabase, isSupabaseConfigured, signInWithPassword, signOut as supabaseSignOut, watchSession } from "@/lib/supabase"
 import type {
   BloodRecord,
   Centre,
   Database,
   DataSource,
   DialysisSession,
+  AccountProfile,
   Patient,
-  StaffProfile,
+  PatientSignup,
 } from "@/lib/types"
 import type { Session } from "@supabase/supabase-js"
 
@@ -54,8 +62,15 @@ type StoreValue = {
   resetLocalDemo: () => void
   seedRemoteDemo: () => Promise<void>
   accountEmail: string | null
-  profile: StaffProfile | null
+  profile: AccountProfile | null
+  applications: AccountProfile[]
+  hasSuperAdmin: boolean | null
+  setupError: string | null
   signIn: (email: string, password: string) => Promise<void>
+  signUpPatient: (input: PatientSignup) => Promise<void>
+  signUpSuperAdmin: (fullName: string, email: string, password: string) => Promise<void>
+  approve: (account: AccountProfile) => Promise<void>
+  reject: (userId: string) => Promise<void>
   signOut: () => Promise<void>
 }
 
@@ -71,7 +86,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [busy, setBusy] = useState(false)
   const [centreFilter, setCentreFilter] = useState("all")
   const [accountEmail, setAccountEmail] = useState<string | null>(null)
-  const [profile, setProfile] = useState<StaffProfile | null>(null)
+  const [profile, setProfile] = useState<AccountProfile | null>(null)
+  const [applications, setApplications] = useState<AccountProfile[]>([])
+  const [hasSuperAdmin, setHasSuperAdmin] = useState<boolean | null>(null)
+  const [setupError, setSetupError] = useState<string | null>(null)
+  const authHold = useRef(false)
+  const refreshRef = useRef<(session: Session | null) => void>(() => {})
 
   useEffect(() => {
     if (!isSupabaseConfigured()) {
@@ -105,26 +125,44 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (!session) {
         setAccountEmail(null)
         setProfile(null)
+        setApplications([])
         setData(empty)
         setSource("supabase")
         setError(null)
-        setReady(true)
+        void (async () => {
+          try {
+            const exists = await superAdminExists()
+            if (current !== ticket) return
+            setHasSuperAdmin(exists)
+            setSetupError(null)
+          } catch (error: unknown) {
+            if (current !== ticket) return
+            setHasSuperAdmin(null)
+            setSetupError(error instanceof Error ? error.message : "Gagal menyemak super admin.")
+          } finally {
+            if (current === ticket) setReady(true)
+          }
+        })()
         return
       }
       const email = session.user.email ?? ""
       setAccountEmail(email)
       setSource("supabase")
+      setSetupError(null)
       void (async () => {
         try {
-          const nextProfile = await fetchStaffProfile(session.user.id, email)
+          const nextProfile = await fetchAccount(session.user.id, email)
           const result = await loadDatabase()
+          const nextApplications = nextProfile?.role === "super_admin" ? await listApplications() : []
           if (current !== ticket) return
           setProfile(nextProfile)
+          setApplications(nextApplications)
           setData(result.data)
           setError(result.error)
         } catch (error: unknown) {
           if (current !== ticket) return
           setProfile(null)
+          setApplications([])
           setData(empty)
           setError(error instanceof Error ? error.message : "Gagal memuatkan data.")
         } finally {
@@ -133,7 +171,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       })()
     }
 
-    const stop = watchSession(refresh)
+    refreshRef.current = refresh
+    const stop = watchSession((session) => {
+      if (!authHold.current) refresh(session)
+    })
     return () => {
       ticket += 1
       stop()
@@ -272,6 +313,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       },
       accountEmail,
       profile,
+      applications,
+      hasSuperAdmin,
+      setupError,
       signIn: async (email, password) => {
         setBusy(true)
         setError(null)
@@ -285,12 +329,69 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           setBusy(false)
         }
       },
+      signUpPatient: async (input) => {
+        authHold.current = true
+        setBusy(true)
+        setError(null)
+        try {
+          await registerPatient(input)
+          const session = (await getSupabase()?.auth.getSession())?.data.session ?? null
+          authHold.current = false
+          refreshRef.current(session)
+        } catch (error: unknown) {
+          authHold.current = false
+          const message = error instanceof Error ? error.message : "Pendaftaran gagal."
+          setError(message)
+          throw error
+        } finally {
+          setBusy(false)
+        }
+      },
+      signUpSuperAdmin: async (fullName, email, password) => {
+        authHold.current = true
+        setBusy(true)
+        setError(null)
+        try {
+          await registerSuperAdmin(fullName, email, password)
+          const session = (await getSupabase()?.auth.getSession())?.data.session ?? null
+          authHold.current = false
+          refreshRef.current(session)
+        } catch (error: unknown) {
+          authHold.current = false
+          const message = error instanceof Error ? error.message : "Pendaftaran super admin gagal."
+          setError(message)
+          throw error
+        } finally {
+          setBusy(false)
+        }
+      },
+      approve: async (account) => {
+        setBusy(true)
+        try {
+          await approveApplication(account)
+          const session = (await getSupabase()?.auth.getSession())?.data.session ?? null
+          refreshRef.current(session)
+        } finally {
+          setBusy(false)
+        }
+      },
+      reject: async (userId) => {
+        setBusy(true)
+        try {
+          await rejectApplication(userId)
+          const session = (await getSupabase()?.auth.getSession())?.data.session ?? null
+          refreshRef.current(session)
+        } finally {
+          setBusy(false)
+        }
+      },
       signOut: async () => {
         setBusy(true)
         try {
           await supabaseSignOut()
           setAccountEmail(null)
           setProfile(null)
+          setApplications([])
           setData(empty)
           setError(null)
         } finally {
@@ -298,7 +399,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         }
       },
     }),
-    [accountEmail, busy, centreFilter, commitLocal, data, error, profile, ready, run, source],
+    [accountEmail, applications, busy, centreFilter, commitLocal, data, error, hasSuperAdmin, profile, ready, run, setupError, source],
   )
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>

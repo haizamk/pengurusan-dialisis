@@ -37,7 +37,7 @@ export function PatientDetailScreen() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
   const id = params.id
-  const { ready, centres, patients, sessions, labs, removePatient, removeSession, removeLab } = useStore()
+  const { ready, centres, patients, sessions, labs, removePatient, removeSession, removeLab, profile, source } = useStore()
   const [editOpen, setEditOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [sessionId, setSessionId] = useState<string | undefined>()
@@ -277,11 +277,13 @@ export function PatientDetailScreen() {
         )}
       </section>
 
-      <div className="mt-6">
-        <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
-          Padam pesakit
-        </Button>
-      </div>
+      {source === "local" || profile?.role === "super_admin" ? (
+        <div className="mt-6">
+          <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
+            Padam pesakit
+          </Button>
+        </div>
+      ) : null}
 
       <PatientDialog open={editOpen} onOpenChange={setEditOpen} patient={patient} />
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>

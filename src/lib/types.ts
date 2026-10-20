@@ -1,14 +1,40 @@
 export type Sex = "lelaki" | "perempuan"
 export type AccessType = "fistula" | "graft" | "kateter"
 export type DataSource = "local" | "supabase"
-export type StaffRole = "pentadbir" | "staf"
+export type AccountRole = "super_admin" | "pesakit"
+export type AccountStatus = "menunggu" | "lulus" | "tolak"
 
-export type StaffProfile = {
+export type AccountProfile = {
   userId: string
   email: string
   fullName: string
-  role: StaffRole
-  centreIds: string[]
+  role: AccountRole
+  status: AccountStatus
+  patientId: string | null
+  phone: string
+  sex: Sex | null
+  dateOfBirth: string | null
+  centreId: string | null
+  dryWeightKg: number | null
+  accessType: AccessType | null
+  accessSite: string
+  schedule: string
+  diagnosis: string
+}
+
+export type PatientSignup = {
+  fullName: string
+  email: string
+  password: string
+  phone: string
+  sex: Sex
+  dateOfBirth: string
+  centreId: string
+  dryWeightKg: number
+  accessType: AccessType
+  accessSite: string
+  schedule: string
+  diagnosis: string
 }
 
 export type Centre = {

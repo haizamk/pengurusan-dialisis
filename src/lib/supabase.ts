@@ -35,9 +35,20 @@ export function translateAuthError(message: string) {
     return "Tidak dapat menghubungi Supabase. Semak URL projek dan sambungan."
   }
   if (lower.includes("email not confirmed")) {
-    return "Emel belum disahkan. Cipta pengguna dari Authentication → Users supaya akaun terus aktif."
+    return "Emel belum disahkan. Dalam Supabase, buka Authentication → Providers → Email dan matikan Confirm email."
   }
+  if (lower.includes("already registered") || lower.includes("already been registered")) {
+    return "Emel ini sudah didaftarkan. Log masuk, atau guna emel lain."
+  }
+  if (lower.includes("password")) return "Kata laluan ditolak. Gunakan sekurang-kurangnya 8 aksara."
   return message
+}
+
+export function generatePassword() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+  const bytes = new Uint8Array(12)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("")
 }
 
 export async function signInWithPassword(email: string, password: string) {

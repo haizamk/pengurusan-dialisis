@@ -5,13 +5,14 @@ import { usePathname } from "next/navigation"
 import { Suspense, useState } from "react"
 import {
   Activity,
+  ClipboardCheck,
   Droplets,
   LayoutDashboard,
   Leaf,
   Users,
 } from "lucide-react"
 import { toast } from "sonner"
-import { AccountGate, LoginScreen } from "@/components/auth-screens"
+import { AccountGate, LoginScreen, PendingScreen, RejectedScreen } from "@/components/auth-screens"
 import { ChoiceSelect } from "@/components/choice-select"
 import { CentreDialog } from "@/components/patient-dialog"
 import { Button } from "@/components/ui/button"
@@ -41,9 +42,20 @@ function useActive() {
 
 function SideNav() {
   const active = useActive()
+  const { profile, applications } = useStore()
+  const waiting = applications.filter((item) => item.status === "menunggu").length
+  const items =
+    profile?.role === "super_admin"
+      ? [
+          NAV[0],
+          NAV[1],
+          { href: "/permohonan", label: waiting > 0 ? `Permohonan (${waiting})` : "Permohonan", icon: ClipboardCheck },
+          ...NAV.slice(2),
+        ]
+      : NAV
   return (
     <nav className="flex flex-1 flex-col gap-1 px-3 py-4">
-      {NAV.map((item) => {
+      {items.map((item) => {
         const Icon = item.icon
         return (
           <Link
@@ -66,7 +78,11 @@ function SideNav() {
                   ? "Makanan & tapak"
                   : item.label === "Dialisis"
                     ? "Sesi dialisis"
-                    : "Pesakit"}
+                    : item.label.startsWith("Permohonan")
+                      ? item.label
+                      : profile?.role === "pesakit"
+                        ? "Rekod saya"
+                        : "Pesakit"}
           </Link>
         )
       })}
@@ -76,6 +92,7 @@ function SideNav() {
 
 function MobileNav() {
   const active = useActive()
+  const { profile } = useStore()
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border bg-card/95 backdrop-blur md:hidden">
       {NAV.map((item) => {
@@ -91,7 +108,7 @@ function MobileNav() {
             )}
           >
             <Icon className="size-4" />
-            {item.label}
+            {item.label === "Pesakit" && profile?.role === "pesakit" ? "Saya" : item.label}
           </Link>
         )
       })}
@@ -113,14 +130,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
     busy,
     accountEmail,
     profile,
+    applications,
     signOut,
   } = useStore()
   const [centreOpen, setCentreOpen] = useState(false)
   const [resetOpen, setResetOpen] = useState(false)
-  const canManageCentres = source === "local" || profile?.role === "pentadbir"
+  const canManageCentres = source === "local" || profile?.role === "super_admin"
   const needsLogin = source === "supabase" && ready && !accountEmail
   const needsLink = source === "supabase" && ready && Boolean(accountEmail) && !profile
-  const showApp = ready && !needsLogin && !needsLink
+  const pending = profile?.role === "pesakit" && profile.status === "menunggu"
+  const rejected = profile?.role === "pesakit" && profile.status === "tolak"
+  const showApp = ready && !needsLogin && !needsLink && !pending && !rejected
+  const waiting = applications.filter((item) => item.status === "menunggu").length
 
   return (
     <>
@@ -137,6 +158,16 @@ export function Shell({ children }: { children: React.ReactNode }) {
       {needsLink ? (
         <div className="fixed inset-0 z-50 overflow-auto bg-background">
           <AccountGate />
+        </div>
+      ) : null}
+      {pending ? (
+        <div className="fixed inset-0 z-50 overflow-auto bg-background">
+          <PendingScreen />
+        </div>
+      ) : null}
+      {rejected ? (
+        <div className="fixed inset-0 z-50 overflow-auto bg-background">
+          <RejectedScreen />
         </div>
       ) : null}
     <div className={showApp ? "min-h-dvh bg-background" : "hidden"} aria-hidden={showApp ? undefined : true}>
@@ -156,7 +187,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           {profile ? (
             <p>
               {profile.fullName}
-              <span className="block">{profile.role === "pentadbir" ? "Pentadbir" : "Staf"} · {accountEmail}</span>
+              <span className="block">{profile.role === "super_admin" ? "Super admin" : "Pesakit"} · {accountEmail}</span>
             </p>
           ) : null}
           {source === "supabase" ? (
@@ -203,6 +234,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
                   Keluar
                 </Button>
               ) : null}
+              {profile?.role === "super_admin" ? (
+                <Link href="/permohonan" className="inline-flex h-11 items-center rounded-lg border border-border px-3 text-sm md:hidden">
+                  Permohonan{waiting > 0 ? ` (${waiting})` : ""}
+                </Link>
+              ) : null}
               {canManageCentres ? (
                 <Button variant="outline" className="h-11" onClick={() => setCentreOpen(true)}>
                   Centre baharu
@@ -213,7 +249,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
                   Set semula contoh
                 </Button>
               ) : null}
-              {source === "supabase" && profile?.role === "pentadbir" && patients.length === 0 ? (
+              {source === "supabase" && profile?.role === "super_admin" && patients.length === 0 ? (
                 <Button
                   className="h-11"
                   disabled={busy}

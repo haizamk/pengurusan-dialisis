@@ -16,7 +16,7 @@ Data contoh sepuluh pesakit rekaan dimuatkan pada pelayar. Ia bukan rekod klinik
 
 Supabase dipilih kerana data ini berjadual: centre, pesakit, sesi, dan makmal. Postgres menguatkuasakan hubungan dan keunikan satu sesi bagi setiap pesakit pada satu tarikh. Polisi baris boleh dihadkan kepada staf centre tertentu apabila log masuk ditambah. Kunci `service_role` tidak digunakan dalam pelayar.
 
-Jika pembolehubah Supabase kosong, aplikasi menyimpan data dalam `localStorage`. Sambungan tidak wajib untuk mencuba aplikasi. Apabila Supabase diisi, laman minta log masuk dan tidak lagi menjatuhkan rekod ke data contoh pelayar.
+Jika pembolehubah Supabase kosong, aplikasi menyimpan data dalam `localStorage`. Sambungan tidak wajib untuk mencuba aplikasi. Apabila Supabase diisi, pesakit mendaftar sendiri dan super admin meluluskan permohonan.
 
 ## Jalankan tempatan
 
@@ -35,13 +35,14 @@ npm run lint
 ## Sambung Supabase
 
 1. Cipta projek di [supabase.com](https://supabase.com).
-2. Buka SQL Editor dan jalankan `supabase/schema.sql`. Projek yang sudah menjalankan skema lama jalankan `supabase/access.sql` sekali.
-3. Dalam Authentication → Users, cipta pengguna staf dengan emel dan kata laluan. Matikan pendaftaran awam jika suis itu ada.
+2. Buka SQL Editor dan jalankan `supabase/schema.sql`. Projek yang sudah ada jadual jalankan `supabase/access.sql` sekali.
+3. Dalam Authentication → Providers → Email, matikan **Confirm email** supaya pendaftaran terus aktif.
 4. Salin `.env.example` ke `.env.local`.
 5. Isi `NEXT_PUBLIC_SUPABASE_URL` (bermula dengan `https://`, tanpa awalan `db.`) dan `NEXT_PUBLIC_SUPABASE_ANON_KEY` (kunci publishable).
-6. Mulakan semula pelayan, log masuk, dan jika skrin minta SQL, jalankan skrip yang dipaparkan supaya akaun itu menjadi pentadbir.
+6. Buka laman, tekan **Daftar super admin**, dan cipta emel serta kata laluan. Butang **Jana** membuat kata laluan. Akaun ini hanya boleh dicipta sekali.
+7. Pesakit tekan **Daftar permohonan pesakit** dan memilih kata laluan sendiri. Super admin meluluskan di halaman **Permohonan**. Selepas itu pesakit log masuk dan mengisi sesi serta rekod darah sendiri.
 
-Staf biasa hanya melihat centre yang ada dalam `staff_centres`. Pentadbir melihat semua centre dan boleh menambah centre. Kunci publishable tanpa sesi log masuk tidak boleh membaca rekod.
+Pesakit yang diluluskan hanya membaca dan menulis rekod sendiri. Super admin melihat semua rekod dan permohonan. Kunci publishable tanpa sesi tidak boleh membaca rekod klinikal.
 
 ## Hos di Netlify
 

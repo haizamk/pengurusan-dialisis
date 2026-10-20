@@ -21,7 +21,7 @@ import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
 export function DashboardScreen() {
-  const { ready, centres, patients, sessions, labs, centreFilter } = useStore()
+  const { ready, centres, patients, sessions, labs, centreFilter, profile } = useStore()
 
   const visiblePatients = useMemo(
     () =>
@@ -74,8 +74,12 @@ export function DashboardScreen() {
     <div>
       <PageHeader
         eyebrow={todayLabel || "Hari ini"}
-        title="Papan pemuka kesihatan"
-        description={`Ringkasan pesakit dialisis untuk ${centreName}. Amaran datang dari sesi terkini dan rekod darah terkini.`}
+        title={profile?.role === "pesakit" ? "Rekod kesihatan saya" : "Papan pemuka kesihatan"}
+        description={
+          profile?.role === "pesakit"
+            ? "Ringkasan dialisis anda. Sesi, berat, dan rekod darah diisi sendiri selepas kelulusan."
+            : `Ringkasan pesakit dialisis untuk ${centreName}. Amaran datang dari sesi terkini dan rekod darah terkini.`
+        }
         action={
           <>
             <Link href="/dialisis" className={cn(buttonVariants(), "h-11")}>

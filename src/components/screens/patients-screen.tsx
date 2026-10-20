@@ -22,7 +22,7 @@ import { useStore } from "@/lib/store"
 import type { AccessType } from "@/lib/types"
 
 export function PatientsScreen() {
-  const { ready, centres, patients, sessions, labs, centreFilter } = useStore()
+  const { ready, centres, patients, sessions, labs, centreFilter, profile } = useStore()
   const [query, setQuery] = useState("")
   const [access, setAccess] = useState<AccessType | "all">("all")
   const [open, setOpen] = useState(false)
@@ -48,12 +48,18 @@ export function PatientsScreen() {
     <div>
       <PageHeader
         eyebrow="Pesakit"
-        title="Senarai mengikut centre"
-        description="Cari pesakit, lihat berat kering, dan buka rekod untuk sesi serta darah."
+        title={profile?.role === "pesakit" ? "Rekod saya" : "Senarai mengikut centre"}
+        description={
+          profile?.role === "pesakit"
+            ? "Ini rekod anda. Masukkan sesi dialisis dan darah sendiri."
+            : "Cari pesakit, lihat berat kering, dan buka rekod untuk sesi serta darah."
+        }
         action={
-          <Button className="h-11" onClick={() => setOpen(true)}>
-            Pesakit baharu
-          </Button>
+          profile?.role === "pesakit" ? null : (
+            <Button className="h-11" onClick={() => setOpen(true)}>
+              Pesakit baharu
+            </Button>
+          )
         }
       />
 
