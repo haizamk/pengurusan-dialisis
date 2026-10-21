@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { CalendarDays, ClipboardList, Plus, Save } from "lucide-react"
+import { useEffect, useState } from "react"
+import { CalendarDays, ClipboardList, Save } from "lucide-react"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -44,7 +44,7 @@ export default function Page() {
   const [kind, setKind] = useState<Kind>("gejala")
   const [recordedOn, setRecordedOn] = useState("")
   const [body, setBody] = useState("")
-  const [entries, setEntries] = useState<Entry[]>(() => (patient ? readEntries(patient.id) : []))
+  const [entries, setEntries] = useState<Entry[]>([])\n\n  useEffect(() => {\n    setEntries(patient ? readEntries(patient.id) : [])\n  }, [patient?.id])
 
   if (profile?.role === "super_admin") {
     return (
