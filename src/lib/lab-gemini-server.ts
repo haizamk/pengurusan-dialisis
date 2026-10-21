@@ -71,7 +71,7 @@ async function requestOpenAiVision(input: { bytes: Uint8Array; kind: "pdf" | "pn
   const content = input.kind === "pdf"
     ? [
         { type: "input_file", filename: input.fileName.toLowerCase().endsWith(".pdf") ? input.fileName : "laporan.pdf", file_data: "data:application/pdf;base64," + base64, detail: "high" },
-        { type: "input_text", text: GEMINI_EXTRACT_PROMPT },
+        { type: "input_text", text: GEMINI_EXTRACT_PROMPT + "\n\nPulangkan objek JSON sahaja dengan bentuk tepat: { sampleDate: string|null, dateUncertain: boolean, results: [{ name: string, valueText: string|null, unit: string|null, referenceRange: string|null, abnormalFlag: string|null, visibleText: string, uncertain: boolean, page: number|null }] }. Jangan tambah markdown atau teks di luar JSON. " + "visibleText mesti mengandungi nilai yang sama tepat seperti valueText. Jika ragu, valueText=null dan uncertain=true." },
       ]
     : [
         { type: "input_image", image_url: "data:" + (input.kind === "png" ? "image/png" : "image/jpeg") + ";base64," + base64, detail: "high" },
