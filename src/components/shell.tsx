@@ -83,7 +83,7 @@ function SideNav() {
   const { profile } = useStore()
   const items = useNavItems()
   return (
-    <nav className="flex flex-1 flex-col gap-1 px-3 py-4">
+    <nav className="flex flex-1 flex-col gap-1 px-3 py-5">
       {items.map((item) => {
         const Icon = item.icon
         return (
@@ -92,10 +92,10 @@ function SideNav() {
             href={item.href}
             aria-current={active(item.href) ? "page" : undefined}
             className={cn(
-              "flex min-h-12 items-center gap-3 rounded-xl px-3 py-3 text-sm",
+              "group flex min-h-12 items-center gap-3 rounded-xl border border-transparent px-3 py-3 text-sm font-medium transition-colors",
               active(item.href)
-                ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                : "text-sidebar-foreground/80 hover:bg-sidebar-accent/70",
+                ? "border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
+                : "text-sidebar-foreground/75 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
             )}
           >
             <Icon className="size-4" />
@@ -112,7 +112,7 @@ function MobileNav() {
   const { profile } = useStore()
   const items = useNavItems()
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-border bg-card/95 backdrop-blur md:hidden">
+    <nav aria-label="Navigasi utama" className="fixed inset-x-0 bottom-0 z-30 flex gap-1 overflow-x-auto overscroll-x-contain border-t border-border/80 bg-card/95 px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2 shadow-[0_-12px_35px_rgba(0,0,0,0.18)] backdrop-blur-xl md:hidden">
       {items.map((item) => {
         const Icon = item.icon
         return (
@@ -121,8 +121,8 @@ function MobileNav() {
             href={item.href}
             aria-current={active(item.href) ? "page" : undefined}
             className={cn(
-              "flex min-h-12 flex-col items-center justify-center gap-1 px-1 py-2 text-[0.68rem]",
-              active(item.href) ? "text-primary" : "text-muted-foreground",
+              "flex min-h-14 min-w-[68px] shrink-0 flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-xs font-medium transition-colors",
+              active(item.href) ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-secondary/70",
             )}
           >
             <Icon className="size-4" />
@@ -186,19 +186,21 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <RejectedScreen />
         </div>
       ) : null}
-    <div className={showApp ? "min-h-dvh bg-background" : "hidden"} aria-hidden={showApp ? undefined : true}>
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col bg-sidebar text-sidebar-foreground md:flex">
-        <div className="border-b border-sidebar-border px-5 py-6">
-          <p className="font-heading text-[1.65rem] leading-none text-sidebar-primary">PPD</p>
-          <h1 className="mt-3 font-heading text-xl leading-tight">Pengurusan Pesakit Dialisis</h1>
-          <p className="mt-2 text-xs leading-5 text-sidebar-foreground/70">
-            Berat kering, rekod darah, dan UF untuk pelbagai centre.
+    <div className={showApp ? "min-h-dvh bg-[radial-gradient(ellipse_at_top,rgba(25,113,125,0.10),transparent_42%),var(--background)]" : "hidden"} aria-hidden={showApp ? undefined : true}>
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 flex-col border-r border-sidebar-border/80 bg-sidebar text-sidebar-foreground shadow-xl shadow-black/10 md:flex">
+        <div className="border-b border-sidebar-border/80 px-5 py-6">
+          <div className="flex items-center gap-3">
+            <div className="flex size-11 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-300 to-cyan-500 font-bold text-slate-950 shadow-lg shadow-teal-950/25">P</div>
+            <div className="min-w-0"><p className="text-xs font-bold tracking-[0.2em] text-sidebar-primary uppercase">PPD · Portal</p><h1 className="mt-1 font-heading text-lg leading-tight">Pengurusan Dialisis</h1></div>
+          </div>
+          <p className="mt-4 text-xs leading-5 text-sidebar-foreground/65">
+            {profile?.role === "super_admin" ? "Kawalan akses dan permohonan akaun." : profile?.role === "pesakit" ? "Rekod kesihatan peribadi anda." : "Pemantauan sesi, berat, dan rekod darah."}
           </p>
         </div>
         <Suspense fallback={<div className="flex-1" />}>
           <SideNav />
         </Suspense>
-        <div className="space-y-3 border-t border-sidebar-border px-4 py-4 text-xs leading-5 text-sidebar-foreground/70">
+        <div className="space-y-3 border-t border-sidebar-border/80 px-4 py-4 text-xs leading-5 text-sidebar-foreground/70">
           <p>{source === "supabase" ? "Disambung ke Supabase." : "Data contoh disimpan pada pelayar ini."}</p>
           {profile ? (
             <p>
@@ -221,11 +223,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <div className="md:pl-64">
-        <header className="sticky top-0 z-20 border-b border-border/80 bg-background/90 backdrop-blur">
-          <div className="flex flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between md:px-8">
+      <div className="min-w-0 md:pl-72">
+        <header className="sticky top-0 z-20 border-b border-border/70 bg-background/85 backdrop-blur-xl">
+          <div className="flex flex-col gap-3 px-4 py-3.5 sm:px-5 md:flex-row md:items-center md:justify-between md:px-8">
             <div className="md:hidden">
-              <p className="font-heading text-xl leading-none">Pengurusan Pesakit Dialisis</p>
+              <p className="font-heading text-lg font-semibold leading-tight tracking-tight">Pengurusan Pesakit Dialisis</p>
+              <p className="mt-1 text-xs text-muted-foreground">{profile?.role === "super_admin" ? "Portal master admin" : profile?.role === "pesakit" ? "Portal pesakit" : "Ringkasan operasi"}</p>
             </div>
             <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center">
               <p className="hidden text-sm text-muted-foreground md:block">Tapis centre</p>
@@ -280,7 +283,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </p>
           ) : null}
         </header>
-        <main className="px-4 py-6 pb-44 md:px-8 md:pb-12">{children}</main>
+        <main id="main-content" className="mx-auto w-full max-w-[1680px] min-w-0 px-4 py-5 pb-28 sm:px-6 sm:py-7 md:px-8 md:pb-12 xl:px-10 2xl:px-12">{children}</main>
       </div>
 
       <Suspense fallback={null}>
