@@ -2,7 +2,7 @@ import { catalogueForName, parseLabNumber, unitAppearsInText, type ParsedObserva
 
 export const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
 export const GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-2.5-flash"] as const
-export const MAX_GEMINI_FILE_BYTES = 4 * 1024 * 1024
+export const MAX_GEMINI_FILE_BYTES = 20 * 1024 * 1024
 
 export const GEMINI_RESPONSE_SCHEMA = {
   type: "object",
