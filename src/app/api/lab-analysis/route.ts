@@ -72,7 +72,7 @@ export async function POST(request: Request) {
       typeof row.key !== "string" || typeof row.label !== "string" ||
       typeof row.value !== "number" || !Number.isFinite(row.value) ||
       typeof row.unit !== "string" || typeof row.date !== "string" ||
-      !/^\\d{4}-\\d{2}-\\d{2}$/.test(row.date)
+      !/^\d{4}-\d{2}-\d{2}$/.test(row.date)
     ) return []
     return [{
       key: row.key.slice(0, 80),
