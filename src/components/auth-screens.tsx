@@ -128,7 +128,7 @@ export function LoginScreen() {
                 </Field>
                 <PasswordField id="kata-laluan" value={password} onChange={setPassword} autoComplete="current-password" />
                 {error ? <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p> : null}
-                <Button type="submit" className="h-12 rounded-xl bg-[#0f6674] text-base font-semibold shadow-md shadow-teal-900/15 transition hover:bg-[#0b5360]" disabled={busy}>
+                <Button type="submit" className="h-12 rounded-xl bg-[#0f6674] text-base font-semibold !text-white shadow-md shadow-teal-900/15 transition hover:bg-[#0b5360] hover:!text-white focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2" disabled={busy}>
                   {busy ? "Sedang masuk…" : "Log masuk ke portal"}
                   {!busy ? <svg viewBox="0 0 24 24" fill="none" className="ml-2 h-4 w-4" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg> : null}
                 </Button>
@@ -439,14 +439,14 @@ function PasswordField({
           autoComplete={autoComplete}
           required
           minLength={8}
-          className="h-11"
+          className="h-12 min-w-0 flex-1 rounded-xl border-slate-300 bg-white px-4 text-base text-slate-900 shadow-none placeholder:text-slate-400 focus-visible:border-teal-700 focus-visible:ring-2 focus-visible:ring-teal-700/20"
           value={value}
           onChange={(event) => onChange(event.target.value)}
         />
         <Button
           type="button"
           variant="outline"
-          className="h-11"
+          className="h-12 shrink-0 rounded-xl border-slate-300 bg-white px-4 text-sm font-semibold !text-slate-800 hover:bg-slate-100 hover:!text-slate-900 focus-visible:ring-2 focus-visible:ring-teal-700 focus-visible:ring-offset-2"
           onClick={() => {
             const next = generatePassword()
             onChange(next)
