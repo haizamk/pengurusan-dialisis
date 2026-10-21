@@ -539,8 +539,8 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
               <p className="mt-2">{item.question}</p>
             </article>
           ))}
-          <Button type="button" className="!h-12 w-fit" disabled={confirmed.length === 0} onClick={() => void saveAnalysis()}>
-            Simpan analisis baharu
+          <Button type="button" className="!h-12 w-fit" disabled={confirmed.length === 0 || analysing} onClick={() => void saveAnalysis()}>
+            {analysing ? "Sedang menjana analisis AI…" : "Jana dan simpan analisis AI"}
           </Button>
           {(data?.analyses ?? []).map((item) => {
             const body = item.body as { parameters?: Array<{ key?: string; label?: string; value?: number; unit?: string; date?: string; status?: string; interpretation?: string; foodTips?: string[]; followUp?: string }> }
