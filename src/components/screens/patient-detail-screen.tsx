@@ -47,6 +47,13 @@ export function PatientDetailScreen() {
 
   if (!ready) return <LoadingBlock />
 
+  if (profile?.role === "super_admin") {
+    return <PageHeader eyebrow="Kawalan akses" title="Rekod klinikal" description="Maklumat kesihatan pesakit tidak dipaparkan dalam portal Master Admin." />
+  }
+  if (profile?.role === "pesakit" && profile.patientId !== id) {
+    return <PageHeader eyebrow="Kawalan akses" title="Rekod tidak tersedia" description="Akaun pesakit hanya boleh membuka rekod yang dipautkan kepada akaun sendiri." />
+  }
+
   const patient = patients.find((item) => item.id === id)
   if (!patient) {
     return (
@@ -140,7 +147,7 @@ export function PatientDetailScreen() {
         </div>
       ) : null}
 
-      <section className="mt-6 rounded-2xl bg-card p-5 ring-1 ring-foreground/10">
+      <section className="rounded-3xl border border-border/80 bg-card p-4 shadow-sm sm:p-6">
         <h2 className="font-heading text-2xl">Trend berat</h2>
         <div className="mt-4">
           <WeightChart sessions={history} />
@@ -152,7 +159,7 @@ export function PatientDetailScreen() {
         {history.length === 0 ? (
           <p className="mt-3 text-sm text-muted-foreground">Belum ada sesi.</p>
         ) : (
-          <Table className="mt-3">
+          <div className="mt-3 overflow-x-auto rounded-xl border border-border/80"><Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Tarikh</TableHead>
@@ -200,7 +207,7 @@ export function PatientDetailScreen() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </Table></div>
         )}
       </section>
 
