@@ -214,9 +214,13 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
     if (!data || !patientId || readingRef.current) return
     readingRef.current = true
     setReading(true)
+    setActiveId(document.id)
+    setUploadStage("extracting")
+    toast.message("Membaca semula laporan asal. Tunggu sehingga ekstraksi selesai.")
     try {
       const blob = await openLabDocument(document)
       if (!blob) {
+        setUploadStage("error")
         toast.error("Fail asal tidak dijumpai. Laporan yang dimuat naik tidak dipadam.")
         return
       }
@@ -238,9 +242,14 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
         reportDate: outcome.reportDate,
         dateUncertain: outcome.dateUncertain,
       })
+      setUploadStage("saving")
       await commit(applyReextraction(data, document.id, draft))
-      if (draft.observations.length > 0) toast.success(PATIENT_STATUS.found)
-      else toast.message(PATIENT_STATUS.failed)
+      setUploadStage(draft.observations.length > 0 ? "done" : "error")
+      if (draft.observations.length > 0) toast.success("Ekstraksi semula selesai. Semak setiap bacaan sebelum mengesahkan.")
+      else toast.error("Ekstraksi semula tidak menemui bacaan yang boleh disimpan. Laporan asal kekal; buka Butiran teknikal untuk semak ralat.")
+    } catch (error) {
+      setUploadStage("error")
+      toast.error(error instanceof Error ? `Ekstraksi semula gagal: ${error.message}` : "Ekstraksi semula gagal. Laporan asal kekal.")
     } finally {
       readingRef.current = false
       setReading(false)
