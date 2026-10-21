@@ -156,7 +156,7 @@ function MobileNav() {
             moreOpen ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-secondary/70",
           )}
         >
-          <span className="text-xl leading-none" aria-hidden="true">•••</span>
+          <MoreHorizontal className="size-5" aria-hidden="true" />
           Lagi
         </button>
       ) : null}
