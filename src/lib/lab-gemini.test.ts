@@ -6,37 +6,19 @@ import { observationsFromGemini, selectedGeminiModel, validateGeminiPayload } fr
 import { extractWithGemini } from "./lab-gemini-server"
 import { extractReport, PATIENT_STATUS } from "./pdf-text"
 
-test("model Gemini hanya dipilih dari senarai rasmi", () => {
+test("model Gemini lama kekal untuk parser kompatibiliti", () => {
   assert.equal(selectedGeminiModel("gemini-3.8-flash"), "gemini-3.8-flash")
   assert.equal(selectedGeminiModel("gemini-nama-cipta"), "gemini-3.8-flash")
   assert.equal(selectedGeminiModel(""), "gemini-3.8-flash")
 })
 
-test("nilai Gemini yang tidak ada dalam teks laporan ditolak", () => {
+test("nilai yang tidak ada dalam teks laporan ditolak", () => {
   const validated = validateGeminiPayload({
     sampleDate: "2026-03-12",
     dateUncertain: false,
     results: [
-      {
-        name: "Hemoglobin",
-        valueText: "11.2",
-        unit: "g/dL",
-        referenceRange: null,
-        abnormalFlag: null,
-        visibleText: "Hemoglobin 11.2 g/dL",
-        uncertain: false,
-        page: 1,
-      },
-      {
-        name: "Kalium",
-        valueText: "4.5",
-        unit: "mmol/L",
-        referenceRange: null,
-        abnormalFlag: null,
-        visibleText: "Tiada kalium pada baris ini",
-        uncertain: false,
-        page: 1,
-      },
+      { name: "Hemoglobin", valueText: "11.2", unit: "g/dL", referenceRange: null, abnormalFlag: null, visibleText: "Hemoglobin 11.2 g/dL", uncertain: false, page: 1 },
+      { name: "Kalium", valueText: "4.5", unit: "mmol/L", referenceRange: null, abnormalFlag: null, visibleText: "Tiada kalium pada baris ini", uncertain: false, page: 1 },
     ],
   })
   const mapped = observationsFromGemini(validated.payload!)
@@ -47,43 +29,25 @@ test("nilai Gemini yang tidak ada dalam teks laporan ditolak", () => {
   assert.equal(mapped.report.observations[0]?.standardKey, "hemoglobin")
 })
 
-test("ketidaksamaan Gemini tidak disimpan sebagai nombor", () => {
+test("ketidaksamaan tidak disimpan sebagai nombor", () => {
   const mapped = observationsFromGemini({
     sampleDate: "2026-03-12",
     dateUncertain: false,
-    results: [{
-      name: "Potassium",
-      valueText: "<5.5",
-      unit: "mmol/L",
-      referenceRange: null,
-      abnormalFlag: null,
-      visibleText: "Potassium <5.5 mmol/L",
-      uncertain: false,
-      page: 1,
-    }],
+    results: [{ name: "Potassium", valueText: "<5.5", unit: "mmol/L", referenceRange: null, abnormalFlag: null, visibleText: "Potassium <5.5 mmol/L", uncertain: false, page: 1 }],
   })
   assert.equal(mapped.report.observations[0]?.value, null)
   assert.equal(mapped.report.observations[0]?.uncertain, true)
   assert.match(mapped.report.observations[0]?.snippet ?? "", /<5\.5/)
 })
 
-test("draf Gemini kekal perlu semakan dan tidak disahkan", () => {
+test("draf kekal perlu semakan dan tidak disahkan", () => {
   const mapped = observationsFromGemini({
     sampleDate: "2026-03-12",
     dateUncertain: false,
-    results: [{
-      name: "Hemoglobin",
-      valueText: "11.2",
-      unit: "g/dL",
-      referenceRange: "10.0 - 12.0",
-      abnormalFlag: null,
-      visibleText: "Hemoglobin 11.2 g/dL 10.0 - 12.0",
-      uncertain: false,
-      page: 1,
-    }],
+    results: [{ name: "Hemoglobin", valueText: "11.2", unit: "g/dL", referenceRange: "10.0 - 12.0", abnormalFlag: null, visibleText: "Hemoglobin 11.2 g/dL 10.0 - 12.0", uncertain: false, page: 1 }],
   })
   const draft = draftFromText({
-    id: "dokumen-gemini",
+    id: "dokumen-openai",
     patientId: "pesakit-a",
     fileName: "imbasan.pdf",
     mime: "application/pdf",
@@ -102,7 +66,7 @@ test("draf Gemini kekal perlu semakan dan tidak disahkan", () => {
   assert.equal(draft.document.processingStatus, "selesai")
 })
 
-test("pelayan Gemini menolak fail rosak dan kunci yang tiada", async () => {
+test("pelayan menolak fail rosak dan kunci OpenAI yang tiada", async () => {
   const missing = await extractWithGemini(new Uint8Array([0x25, 0x50, 0x44, 0x46, 1]), { name: "a.pdf", type: "application/pdf" })
   assert.equal(missing.ok, false)
   if (!missing.ok) assert.equal(missing.errorCode, "tiada-enjin")
@@ -111,24 +75,28 @@ test("pelayan Gemini menolak fail rosak dan kunci yang tiada", async () => {
   if (!broken.ok) assert.equal(broken.errorCode, "fail-tidak-sah")
 })
 
-test("ekstraksi hanya memerlukan Mistral dan Nous; tiada fallback Gemini", async () => {
+test("ekstraksi hanya memerlukan OPENAI_API_KEY", async () => {
   const pdf = await PDFDocument.create()
   const page = pdf.addPage()
   const font = await pdf.embedFont(StandardFonts.Helvetica)
   page.drawText("Hemoglobin 11.2 g/dL", { x: 50, y: 690, size: 12, font })
   const bytes = new Uint8Array(await pdf.save())
+  const oldOpenAi = process.env.OPENAI_API_KEY
   const oldMistral = process.env.MISTRAL_API_KEY
   const oldNous = process.env.NOUS_API_KEY
-  delete process.env.MISTRAL_API_KEY
-  delete process.env.NOUS_API_KEY
+  delete process.env.OPENAI_API_KEY
+  process.env.MISTRAL_API_KEY = "not-used"
+  process.env.NOUS_API_KEY = "not-used"
   try {
     const result = await extractWithGemini(bytes, { name: "imbasan.pdf", type: "application/pdf" })
     assert.equal(result.ok, false)
     if (!result.ok) {
       assert.equal(result.errorCode, "tiada-enjin")
-      assert.match(result.errorMessage, /MISTRAL_API_KEY dan NOUS_API_KEY/)
+      assert.match(result.errorMessage, /OPENAI_API_KEY/)
     }
   } finally {
+    if (oldOpenAi === undefined) delete process.env.OPENAI_API_KEY
+    else process.env.OPENAI_API_KEY = oldOpenAi
     if (oldMistral === undefined) delete process.env.MISTRAL_API_KEY
     else process.env.MISTRAL_API_KEY = oldMistral
     if (oldNous === undefined) delete process.env.NOUS_API_KEY
