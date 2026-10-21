@@ -286,7 +286,7 @@ export function PatientDetailScreen() {
         )}
       </section>
 
-      {source === "local" || profile?.role === "super_admin" ? (
+      {source === "local" ? (
         <div className="mt-6">
           <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
             Padam pesakit
