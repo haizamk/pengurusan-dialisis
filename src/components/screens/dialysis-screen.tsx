@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { useMemo, useState } from "react"
-import { Activity, CalendarClock, ClipboardList, Pencil, Plus, Trash2 } from "lucide-react"
+import { CalendarClock, ClipboardList, Pencil, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { LoadingBlock, PageHeader } from "@/components/page-header"
 import { SessionEditor } from "@/components/session-editor"
