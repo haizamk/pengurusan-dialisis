@@ -82,11 +82,13 @@ export function PatientDetailScreen() {
         description={`${patient.mrn} · ${SEX_LABEL[patient.sex]}${age != null ? ` · ${age} tahun` : ""} · ${patient.schedule}`}
         action={
           <>
-            <Button variant="outline" className="h-11" onClick={() => setEditOpen(true)}>
-              Kemas kini
-            </Button>
+            {profile?.role !== "pesakit" ? (
+              <Button variant="outline" className="h-11 rounded-xl" onClick={() => setEditOpen(true)}>
+                Kemas kini profil
+              </Button>
+            ) : null}
             <Button
-              className="h-11"
+              className="h-11 rounded-xl"
               onClick={() => {
                 setSessionId(undefined)
                 setShowSession(true)
@@ -292,7 +294,7 @@ export function PatientDetailScreen() {
         </div>
       ) : null}
 
-      <PatientDialog open={editOpen} onOpenChange={setEditOpen} patient={patient} />
+      {profile?.role !== "pesakit" ? <PatientDialog open={editOpen} onOpenChange={setEditOpen} patient={patient} /> : null}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
           <DialogHeader>
