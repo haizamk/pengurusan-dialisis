@@ -383,6 +383,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
             <p className="mt-1 text-sm leading-6 text-muted-foreground">PDF, JPG atau PNG sehingga 8 MB. Laporan baharu tidak memadam laporan lama.</p>
           </div>
           {reading ? <p className="text-sm leading-6">{PATIENT_STATUS.reading}</p> : <p className="text-sm leading-6 text-muted-foreground">{PATIENT_STATUS.waiting}</p>}
+          <p className="text-sm leading-6 text-muted-foreground">PDF, JPG atau PNG · maksimum 20 MB. PDF imbasan akan cuba dibaca menggunakan OCR jika teks tidak tersedia.</p>
           <label className="flex min-h-12 cursor-pointer items-center justify-center rounded-xl bg-primary px-4 py-3 text-center text-sm font-medium text-primary-foreground">
             Pilih laporan makmal
             <input
