@@ -464,7 +464,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
                 {[
                   ["validating", "Semak jenis dan saiz fail"],
                   ["archiving", "Simpan fail asal ke arkib pesakit"],
-                  ["extracting", "Ekstrak teks dengan Gemini / PDF / OCR"],
+                  ["extracting", "Ekstrak semula dengan OCR + AI"],
                   ["saving", "Simpan bacaan untuk semakan manual"],
                 ].map(([stage, label], index) => {
                   const stages = ["validating", "archiving", "extracting", "saving"]
@@ -515,7 +515,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button type="button" variant="outline" className="!h-12" onClick={() => void openDocument(document)}>Buka fail</Button>
-                    <Button type="button" variant="outline" className="!h-12" disabled={reading} onClick={() => void reread(document)}>Cuba baca semula</Button>
+                    <Button type="button" variant="outline" className="!h-12" disabled={reading} onClick={() => void reread(document)}>{reading ? "Sedang ekstrak…" : "Cuba baca semula"}</Button>
                     <Button type="button" className="!h-12" onClick={() => setActiveId(document.id)}>Semak</Button>
                   </div>
                 </div>
