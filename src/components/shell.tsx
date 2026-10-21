@@ -112,7 +112,7 @@ function MobileNav() {
   const { profile } = useStore()
   const items = useNavItems()
   return (
-    <nav aria-label="Navigasi utama" className="fixed inset-x-0 bottom-0 z-30 flex gap-1 overflow-x-auto border-t border-border/80 bg-card/95 px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2 shadow-[0_-12px_35px_rgba(0,0,0,0.18)] backdrop-blur-xl md:hidden">
+    <nav aria-label="Navigasi utama" className="fixed inset-x-0 bottom-0 z-30 flex gap-1 overflow-x-auto overscroll-x-contain border-t border-border/80 bg-card/95 px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2 shadow-[0_-12px_35px_rgba(0,0,0,0.18)] backdrop-blur-xl md:hidden">
       {items.map((item) => {
         const Icon = item.icon
         return (
@@ -121,7 +121,7 @@ function MobileNav() {
             href={item.href}
             aria-current={active(item.href) ? "page" : undefined}
             className={cn(
-              "flex min-h-14 min-w-[68px] shrink-0 flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-[0.68rem] font-medium transition-colors",
+              "flex min-h-14 min-w-[68px] shrink-0 flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-xs font-medium transition-colors",
               active(item.href) ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-secondary/70",
             )}
           >
@@ -223,7 +223,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <div className="md:pl-64">
+      <div className="min-w-0 md:pl-72">
         <header className="sticky top-0 z-20 border-b border-border/70 bg-background/85 backdrop-blur-xl">
           <div className="flex flex-col gap-3 px-4 py-3.5 sm:px-5 md:flex-row md:items-center md:justify-between md:px-8">
             <div className="md:hidden">
@@ -283,7 +283,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </p>
           ) : null}
         </header>
-        <main className="mx-auto w-full max-w-[1600px] px-4 py-5 pb-24 sm:px-5 sm:py-7 md:px-8 md:pb-12 xl:px-10">{children}</main>
+        <main id="main-content" className="mx-auto w-full max-w-[1680px] min-w-0 px-4 py-5 pb-28 sm:px-6 sm:py-7 md:px-8 md:pb-12 xl:px-10 2xl:px-12">{children}</main>
       </div>
 
       <Suspense fallback={null}>
