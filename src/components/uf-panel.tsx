@@ -17,7 +17,7 @@ function toneForBand(band: UfAnalysis["band"]) {
 export function UfPanel({ analysis }: { analysis: UfAnalysis | null }) {
   if (!analysis || !analysis.valid) {
     return (
-      <section className="rounded-2xl bg-card p-5 ring-1 ring-foreground/10">
+      <section className="rounded-2xl border border-border/80 bg-card p-4 shadow-sm sm:p-5">
         <p className="font-heading text-2xl">Analisis UF</p>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           Isi berat kering dan berat semasa tiba. Panel ini akan kira UF seterusnya dan
@@ -28,7 +28,7 @@ export function UfPanel({ analysis }: { analysis: UfAnalysis | null }) {
   }
 
   return (
-    <section className="rounded-2xl bg-card p-5 ring-1 ring-foreground/10">
+    <section className="rounded-2xl border border-border/80 bg-card p-4 shadow-sm sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-[0.7rem] font-semibold tracking-[0.16em] text-primary uppercase">
