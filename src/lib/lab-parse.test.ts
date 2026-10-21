@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { buildLabAnalysis, filterByRange, parameterSeries, sharedPrintedRange, type ConfirmedResult } from "./lab-analysis"
-import { parseLabText, validateLabFile } from "./lab-parse"
+import { MAX_LAB_FILE_BYTES, parseLabText, validateLabFile } from "./lab-parse"
 
 const report = `
 Tarikh: 12/03/2026
@@ -122,4 +122,13 @@ test("penapis tarikh tidak mencipta titik palsu", () => {
   const points = [{ takenOn: "2025-01-01" }, { takenOn: "2026-03-01" }]
   const filtered = filterByRange(points, "3m", "2026-04-01")
   assert.deepEqual(filtered, [{ takenOn: "2026-03-01" }])
+})
+
+
+test("menerima PDF sehingga 20 MB dan menolak fail melebihi had", () => {
+  assert.equal(MAX_LAB_FILE_BYTES, 20 * 1024 * 1024)
+  const bytes = new Uint8Array(MAX_LAB_FILE_BYTES)
+  bytes.set([0x25, 0x50, 0x44, 0x46])
+  assert.equal(validateLabFile({ name: "laporan.pdf", type: "application/pdf", size: bytes.length }, bytes), null)
+  assert.match(validateLabFile({ name: "laporan.pdf", type: "application/pdf", size: bytes.length + 1 }, bytes) ?? "", /20 MB/)
 })
