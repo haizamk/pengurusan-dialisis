@@ -42,48 +42,61 @@ export async function extractWithGemini(
   if (problem) return { ok: false, errorCode: "fail-tidak-sah", errorMessage: problem }
   const kind = labFileKind(file, bytes)
   if (!kind) return { ok: false, errorCode: "fail-tidak-sah", errorMessage: "Kandungan fail tidak sepadan dengan PDF, JPG atau PNG." }
+
   const key = geminiApiKey()
   const mistralKey = process.env.MISTRAL_API_KEY?.trim() || ""
   const nousKey = process.env.NOUS_API_KEY?.trim() || ""
-  if (!key && !generate && !mistralKey && !nousKey) {
+  const openAiKey = process.env.OPENAI_API_KEY?.trim() || ""
+  if (!key && !generate && !mistralKey && !nousKey && !openAiKey) {
     return { ok: false, errorCode: "tiada-enjin", errorMessage: "Tetapkan sekurang-kurangnya satu kunci API OCR pada pelayan." }
   }
+
   const model = selectedGeminiModel()
   const mime = geminiMime(kind)
   const data = bytesToBase64(bytes)
   let mistralText = ""
-  let mistralError: unknown = null
-  let geminiError: unknown = null
+  const errors: string[] = []
+  const resultModel = (name: string, result: NonNullable<ReturnType<typeof validateAndMap>>) => ({
+    ok: true as const,
+    payload: result.payload,
+    extract: { ...result.report, model: name, rejected: result.rejected },
+  })
 
-  // 1) Mistral reads the source document first.
+  // OCR first: Mistral is the preferred document reader.
   if (mistralKey) {
     try {
       mistralText = await requestMistralOcr({ bytes, mime, key: mistralKey })
       if (!mistralText.trim()) throw new Error("Mistral OCR tidak menemui teks pada laporan.")
-      if (key) {
-        try {
-          const text = await requestGeminiText({ model, text: mistralText, key })
-          const result = validateAndMap(text)
-          if (result) return { ok: true, payload: result.payload, extract: { ...result.report, model: "mistral-ocr-latest + " + model, rejected: result.rejected } }
-          throw new Error("Struktur keputusan selepas OCR tidak sah.")
-        } catch (error) {
-          geminiError = error
-        }
-      }
-      // Independent Nous structuring fallback if Gemini is unavailable or cannot structure OCR text.
-      if (nousKey) {
-        const text = await requestNousText({ text: mistralText, key: nousKey })
-        const result = validateAndMap(text)
-        if (result) return { ok: true, payload: result.payload, extract: { ...result.report, model: "mistral-ocr-latest + nous", rejected: result.rejected } }
-        throw new Error("Nous tidak menghasilkan struktur keputusan makmal yang sah.")
-      }
     } catch (error) {
-      mistralError = error
+      errors.push("Mistral OCR: " + sanitiseError(error))
     }
   }
 
-  // 2) Gemini direct-document extraction when the Mistral path did not return usable results.
+  // Nous Research is the PRIMARY structuring model whenever OCR text is available.
+  if (nousKey && mistralText.trim()) {
+    try {
+      const text = await requestNousText({ text: mistralText, key: nousKey })
+      const result = validateAndMap(text)
+      if (result) return resultModel("mistral-ocr-latest + nous", result)
+      throw new Error("Nous tidak menghasilkan struktur keputusan makmal yang sah.")
+    } catch (error) {
+      errors.push("Nous: " + sanitiseError(error))
+    }
+  }
+
+  // Gemini is the next fallback. It can structure OCR text, or read the source document directly.
   if (key || generate) {
+    if (key && mistralText.trim()) {
+      try {
+        const text = await requestGeminiText({ model, text: mistralText, key })
+        const result = validateAndMap(text)
+        if (result) return resultModel("mistral-ocr-latest + " + model, result)
+        throw new Error("Gemini tidak menghasilkan struktur keputusan makmal yang sah.")
+      } catch (error) {
+        errors.push("Gemini teks OCR: " + sanitiseError(error))
+      }
+    }
+
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         const text = generate
@@ -93,31 +106,38 @@ export async function extractWithGemini(
             : await requestGeminiFileApi({ model, mime, bytes, name: file.name, key })
         const result = validateAndMap(text)
         if (!result) throw new Error("Gemini tidak memulangkan keputusan makmal yang sah.")
-        return { ok: true, payload: result.payload, extract: { ...result.report, model, rejected: result.rejected } }
+        return resultModel(model, result)
       } catch (error) {
-        geminiError = error
+        errors.push("Gemini dokumen: " + sanitiseError(error))
         if (!isTransient(error) || attempt === 1) break
       }
     }
   }
 
-  // 3) Independent Nous fallback. Prefer OCR text if Mistral succeeded; otherwise send the source file to Nous.
-  if (nousKey) {
+  // OpenAI is an additional independent fallback for OCR text.
+  // It is intentionally not sent the original document here: Mistral remains the OCR layer.
+  if (openAiKey && mistralText.trim()) {
     try {
-      if (!mistralText.trim()) throw new Error("Nous memerlukan teks OCR Mistral; OCR tidak berjaya untuk dokumen ini.")
-      const text = await requestNousText({ text: mistralText, key: nousKey })
+      const text = await requestOpenAiText({ text: mistralText, key: openAiKey })
       const result = validateAndMap(text)
-      if (result) return { ok: true, payload: result.payload, extract: { ...result.report, model: mistralText.trim() ? "mistral-ocr-latest + nous" : "nous", rejected: result.rejected } }
-      throw new Error("Nous tidak memulangkan keputusan makmal yang sah.")
+      if (result) return resultModel("mistral-ocr-latest + " + (process.env.OPENAI_LAB_MODEL?.trim() || "gpt-4.1"), result)
+      throw new Error("OpenAI tidak menghasilkan struktur keputusan makmal yang sah.")
     } catch (error) {
-      return { ok: false, errorCode: "semua-enjin-gagal", errorMessage: "Mistral: " + sanitiseError(mistralError) + "; Gemini: " + sanitiseError(geminiError) + "; Nous: " + sanitiseError(error) + ". Semak keputusan secara manual; tiada nilai dibetulkan secara automatik." }
+      errors.push("OpenAI: " + sanitiseError(error))
     }
+  }
+
+  // If Nous is configured but Mistral OCR failed, do not pretend Nous read the source file.
+  if (nousKey && !mistralText.trim()) {
+    errors.push("Nous: memerlukan teks OCR Mistral; OCR sumber tidak berjaya.")
   }
 
   return {
     ok: false,
-    errorCode: "ekstrak-gagal",
-    errorMessage: "Mistral: " + sanitiseError(mistralError) + "; Gemini: " + sanitiseError(geminiError) + (nousKey ? "" : ". Sandaran Nous belum diaktifkan; tetapkan NOUS_API_KEY pada Netlify."),
+    errorCode: "semua-enjin-gagal",
+    errorMessage: errors.length
+      ? errors.join("; ") + ". Semak keputusan secara manual; tiada nilai dibetulkan secara automatik."
+      : "Tiada enjin ekstraksi yang dikonfigurasi. Tetapkan NOUS_API_KEY dan MISTRAL_API_KEY untuk laluan utama.",
   }
 }
 
@@ -178,6 +198,27 @@ async function requestNousText(input: { text: string; key: string }) {
   const content = result.choices?.[0]?.message?.content
   const text = typeof content === "string" ? content.trim() : Array.isArray(content) ? content.map(part => part.text || "").join("\n").trim() : ""
   if (!text) throw new Error("Nous tidak memulangkan struktur keputusan.")
+  return text
+}
+
+
+async function requestOpenAiText(input: { text: string; key: string }) {
+  const model = process.env.OPENAI_LAB_MODEL?.trim() || "gpt-4.1"
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + input.key, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "user", content: GEMINI_EXTRACT_PROMPT + "\n\nTEKS OCR (sumber sahaja, jangan tambah maklumat):\n" + input.text }],
+      response_format: { type: "json_object" },
+      temperature: 0,
+    }),
+    signal: AbortSignal.timeout(60000),
+  })
+  if (!response.ok) throw new Error("OpenAI API HTTP " + response.status + ".")
+  const result = await response.json() as { choices?: Array<{ message?: { content?: string | null } }> }
+  const text = result.choices?.[0]?.message?.content?.trim() || ""
+  if (!text) throw new Error("OpenAI tidak memulangkan struktur keputusan.")
   return text
 }
 
