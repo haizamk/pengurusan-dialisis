@@ -8,7 +8,7 @@ import { CARE_TIPS, FOOD_TIPS, type TipCard } from "@/lib/tips"
 
 export function TipsScreen() {
   return (
-    <div>
+    <div className="space-y-6 sm:space-y-8">
       <PageHeader
         eyebrow="Pendidikan"
         title="Makanan dan penjagaan tapak"
@@ -32,7 +32,7 @@ export function TipsScreen() {
         </TabsContent>
         <TabsContent value="tapak" className="mt-5 grid gap-6">
           {(Object.keys(CARE_TIPS) as (keyof typeof CARE_TIPS)[]).map((key) => (
-            <section key={key}>
+            <section key={key} className="space-y-3">
               <h2 className="font-heading text-2xl">
                 {key === "kecemasan"
                   ? "Tanda kecemasan"
