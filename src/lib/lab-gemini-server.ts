@@ -50,6 +50,25 @@ export async function extractWithGemini(
   const mime = geminiMime(kind)
   const data = bytesToBase64(bytes)
   let last: unknown = null
+
+  // Primary path: Mistral OCR reads the source document first; Gemini structures only the OCR text.
+  const mistralKey = process.env.MISTRAL_API_KEY?.trim() || ""
+  if (mistralKey && key) {
+    try {
+      const ocrText = await requestMistralOcr({ bytes, mime, key: mistralKey })
+      if (!ocrText.trim()) throw new Error("Mistral OCR tidak menemui teks pada laporan.")
+      const text = await requestGeminiText({ model, text: ocrText, key })
+      const parsed = JSON.parse(text) as unknown
+      const validated = validateGeminiPayload(parsed)
+      if (!validated.payload) throw new Error(validated.error ?? "Struktur keputusan selepas OCR tidak sah.")
+      const mapped = observationsFromGemini(validated.payload)
+      if (mapped.report.observations.length === 0) throw new Error("OCR berjaya, tetapi tiada keputusan makmal dapat dikenal pasti.")
+      return { ok: true, payload: validated.payload, extract: { ...mapped.report, model: "mistral-ocr-latest + " + model, rejected: mapped.rejected } }
+    } catch (error) {
+      last = error
+      // Continue to Gemini direct-document fallback below.
+    }
+  }
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const text = generate
@@ -83,36 +102,10 @@ export async function extractWithGemini(
       if (!isTransient(error) || attempt === 1) break
     }
   }
-  const mistralKey = process.env.MISTRAL_API_KEY?.trim() || ""
-  if (mistralKey && key) {
-    try {
-      const ocrText = await requestMistralOcr({ bytes, mime, key: mistralKey })
-      if (!ocrText.trim()) throw new Error("Mistral OCR tidak menemui teks pada laporan.")
-      const text = await requestGeminiText({ model, text: ocrText, key })
-      const parsed = JSON.parse(text) as unknown
-      const validated = validateGeminiPayload(parsed)
-      if (!validated.payload) throw new Error(validated.error ?? "Struktur keputusan selepas OCR tidak sah.")
-      const mapped = observationsFromGemini(validated.payload)
-      if (mapped.report.observations.length === 0) throw new Error("OCR berjaya, tetapi tiada keputusan makmal dapat dikenal pasti.")
-      return {
-        ok: true,
-        payload: validated.payload,
-        extract: { ...mapped.report, model: model + " + mistral-ocr-latest", rejected: mapped.rejected },
-      }
-    } catch (fallbackError) {
-      return {
-        ok: false,
-        errorCode: "gemini-mistral-gagal",
-        errorMessage: "Ekstrak utama gagal (" + sanitiseError(last) + "); OCR sandaran juga gagal (" + sanitiseError(fallbackError) + ").",
-      }
-    }
-  }
   return {
     ok: false,
     errorCode: "gemini-gagal",
-    errorMessage: mistralKey
-      ? sanitiseError(last)
-      : sanitiseError(last) + ". Sandaran Mistral OCR belum diaktifkan; tetapkan MISTRAL_API_KEY pada Netlify.",
+    errorMessage: sanitiseError(last) + (mistralKey ? ". Laluan Mistral OCR dan Gemini gagal; semak log fungsi tanpa mendedahkan kunci API." : ". Sandaran Mistral OCR belum diaktifkan; tetapkan MISTRAL_API_KEY pada Netlify."),
   }
 }
 
