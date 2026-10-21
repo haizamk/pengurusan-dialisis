@@ -418,7 +418,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
         <section className="grid gap-4">
           <div>
             <h2 className="font-heading text-2xl">Muat naik laporan</h2>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">PDF, JPG atau PNG sehingga 8 MB. Laporan baharu tidak memadam laporan lama.</p>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">PDF, JPG atau PNG sehingga 20 MB. Laporan baharu tidak memadam laporan lama.</p>
           </div>
           {reading ? <p className="text-sm leading-6">{PATIENT_STATUS.reading}</p> : <p className="text-sm leading-6 text-muted-foreground">{PATIENT_STATUS.waiting}</p>}
           <p className="text-sm leading-6 text-muted-foreground">PDF, JPG atau PNG · maksimum 20 MB. PDF imbasan akan cuba dibaca menggunakan OCR jika teks tidak tersedia.</p>
