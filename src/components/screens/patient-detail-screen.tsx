@@ -75,7 +75,7 @@ export function PatientDetailScreen() {
   const age = ageFromDob(patient.dateOfBirth)
 
   return (
-    <div>
+    <div className="space-y-6 sm:space-y-8">
       <PageHeader
         eyebrow={centre ? `${centre.name}, ${centre.city}` : "Centre"}
         title={patient.fullName}
@@ -122,7 +122,7 @@ export function PatientDetailScreen() {
 
       <div className="mt-6">
         {analysis ? <UfPanel analysis={analysis} /> : (
-          <p className="rounded-2xl bg-card p-5 text-sm text-muted-foreground ring-1 ring-foreground/10">
+          <p className="rounded-2xl border border-border/80 bg-card p-5 text-sm text-muted-foreground shadow-sm">
             Belum ada sesi. Rekod berat semasa tiba untuk mengira UF seterusnya.
           </p>
         )}
@@ -329,7 +329,7 @@ export function PatientDetailScreen() {
 
 function Info({ label, value }: { label: string; value: string }) {
   return (
-    <article className="rounded-2xl bg-card px-4 py-4 ring-1 ring-foreground/10">
+    <article className="rounded-2xl border border-border/80 bg-card p-4 shadow-sm">
       <p className="text-xs tracking-wide text-muted-foreground uppercase">{label}</p>
       <p className="mt-2 text-sm leading-6 font-medium">{value}</p>
     </article>
