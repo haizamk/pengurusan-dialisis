@@ -1,5 +1,5 @@
 import { getSupabase } from "@/lib/supabase"
-import { observationsFromGemini, validateGeminiPayload, type GeminiExtract } from "@/lib/lab-gemini"
+import { MAX_GEMINI_FILE_BYTES, observationsFromGemini, validateGeminiPayload, type GeminiExtract } from "@/lib/lab-gemini"
 
 export type GeminiClientResult =
   | { ok: true; extract: GeminiExtract }
@@ -9,7 +9,7 @@ export async function requestLabExtract(
   bytes: Uint8Array,
   file: { name: string; type: string },
 ): Promise<GeminiClientResult | null> {
-  if (typeof window === "undefined") return null
+  if (typeof window === "undefined" || bytes.length > MAX_GEMINI_FILE_BYTES) return null
   const form = new FormData()
   form.append("file", new Blob([new Uint8Array(bytes)], { type: file.type || "application/octet-stream" }), file.name)
   const headers: Record<string, string> = {}
