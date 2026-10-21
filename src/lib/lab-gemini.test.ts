@@ -47,7 +47,7 @@ test("draf kekal perlu semakan dan tidak disahkan", () => {
     results: [{ name: "Hemoglobin", valueText: "11.2", unit: "g/dL", referenceRange: "10.0 - 12.0", abnormalFlag: null, visibleText: "Hemoglobin 11.2 g/dL 10.0 - 12.0", uncertain: false, page: 1 }],
   })
   const draft = draftFromText({
-    id: "dokumen-openai",
+    id: "dokumen-nous-openai",
     patientId: "pesakit-a",
     fileName: "imbasan.pdf",
     mime: "application/pdf",
@@ -66,7 +66,7 @@ test("draf kekal perlu semakan dan tidak disahkan", () => {
   assert.equal(draft.document.processingStatus, "selesai")
 })
 
-test("pelayan menolak fail rosak dan kunci OpenAI yang tiada", async () => {
+test("pelayan menolak fail rosak dan kunci Nous yang tiada", async () => {
   const missing = await extractWithGemini(new Uint8Array([0x25, 0x50, 0x44, 0x46, 1]), { name: "a.pdf", type: "application/pdf" })
   assert.equal(missing.ok, false)
   if (!missing.ok) assert.equal(missing.errorCode, "tiada-enjin")
@@ -75,30 +75,22 @@ test("pelayan menolak fail rosak dan kunci OpenAI yang tiada", async () => {
   if (!broken.ok) assert.equal(broken.errorCode, "fail-tidak-sah")
 })
 
-test("ekstraksi hanya memerlukan OPENAI_API_KEY", async () => {
+test("ekstraksi hanya memerlukan NOUS_API_KEY", async () => {
   const pdf = await PDFDocument.create()
   const page = pdf.addPage()
   const font = await pdf.embedFont(StandardFonts.Helvetica)
   page.drawText("Hemoglobin 11.2 g/dL", { x: 50, y: 690, size: 12, font })
   const bytes = new Uint8Array(await pdf.save())
-  const oldOpenAi = process.env.OPENAI_API_KEY
-  const oldMistral = process.env.MISTRAL_API_KEY
   const oldNous = process.env.NOUS_API_KEY
-  delete process.env.OPENAI_API_KEY
-  process.env.MISTRAL_API_KEY = "not-used"
-  process.env.NOUS_API_KEY = "not-used"
+  delete process.env.NOUS_API_KEY
   try {
     const result = await extractWithGemini(bytes, { name: "imbasan.pdf", type: "application/pdf" })
     assert.equal(result.ok, false)
     if (!result.ok) {
       assert.equal(result.errorCode, "tiada-enjin")
-      assert.match(result.errorMessage, /OPENAI_API_KEY/)
+      assert.match(result.errorMessage, /NOUS_API_KEY/)
     }
   } finally {
-    if (oldOpenAi === undefined) delete process.env.OPENAI_API_KEY
-    else process.env.OPENAI_API_KEY = oldOpenAi
-    if (oldMistral === undefined) delete process.env.MISTRAL_API_KEY
-    else process.env.MISTRAL_API_KEY = oldMistral
     if (oldNous === undefined) delete process.env.NOUS_API_KEY
     else process.env.NOUS_API_KEY = oldNous
   }
