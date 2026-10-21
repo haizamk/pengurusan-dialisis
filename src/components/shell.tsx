@@ -55,7 +55,10 @@ function useNavItems() {
   const { profile, applications } = useStore()
   const waiting = applications.filter((item) => item.status === "menunggu").length
   if (profile?.role === "super_admin") {
-    return [{ href: "/permohonan", label: waiting > 0 ? `Permohonan (${waiting})` : "Permohonan", icon: ClipboardCheck }]
+    return [
+      { href: "/", label: "Papan", icon: LayoutDashboard },
+      { href: "/permohonan", label: waiting > 0 ? `Permohonan (${waiting})` : "Permohonan", icon: ClipboardCheck },
+    ]
   }
   if (profile?.role === "pesakit") return PATIENT_NAV
   return NAV
@@ -111,29 +114,77 @@ function MobileNav() {
   const active = useActive()
   const { profile } = useStore()
   const items = useNavItems()
+  const [moreOpen, setMoreOpen] = useState(false)
+  const showMore = items.length > 3 && profile?.role !== "super_admin"
+  const primaryItems = showMore ? items.slice(0, 3) : items
+  const extraItems = showMore ? items.slice(3) : []
+
   return (
-    <nav aria-label="Navigasi utama" className="fixed inset-x-0 bottom-0 z-30 flex gap-1 overflow-x-auto overscroll-x-contain border-t border-border/80 bg-card/95 px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2 shadow-[0_-12px_35px_rgba(0,0,0,0.18)] backdrop-blur-xl md:hidden">
-      {items.map((item) => {
+    <nav
+      aria-label="Navigasi utama"
+      className={cn(
+        "fixed inset-x-0 bottom-0 z-30 grid gap-1 border-t border-border/80 bg-card/95 px-2 pt-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] shadow-[0_-12px_35px_rgba(0,0,0,0.18)] backdrop-blur-xl md:hidden",
+        showMore ? "grid-cols-4" : "grid-cols-2",
+      )}
+    >
+      {primaryItems.map((item) => {
         const Icon = item.icon
         return (
           <Link
             key={item.href}
             href={item.href}
             aria-current={active(item.href) ? "page" : undefined}
+            onClick={() => setMoreOpen(false)}
             className={cn(
-              "flex min-h-14 min-w-[68px] shrink-0 flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-xs font-medium transition-colors",
+              "flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-xs font-semibold transition-colors",
               active(item.href) ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-secondary/70",
             )}
           >
-            <Icon className="size-4" />
-            {item.label === "Pesakit" && profile?.role === "pesakit" ? "Saya" : item.label}
+            <Icon className="size-5" />
+            <span className="max-w-full truncate">{item.label === "Pesakit" && profile?.role === "pesakit" ? "Saya" : item.label}</span>
           </Link>
         )
       })}
+      {showMore ? (
+        <button
+          type="button"
+          aria-expanded={moreOpen}
+          aria-label={moreOpen ? "Tutup menu tambahan" : "Buka menu tambahan"}
+          onClick={() => setMoreOpen((open) => !open)}
+          className={cn(
+            "flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-xs font-semibold transition-colors",
+            moreOpen ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-secondary/70",
+          )}
+        >
+          <span className="text-xl leading-none" aria-hidden="true">•••</span>
+          Lagi
+        </button>
+      ) : null}
+      {showMore && moreOpen ? (
+        <div className="absolute inset-x-3 bottom-full mb-3 grid max-h-[60dvh] grid-cols-2 gap-2 overflow-y-auto rounded-2xl border border-border bg-card p-3 shadow-2xl shadow-black/30">
+          {extraItems.map((item) => {
+            const Icon = item.icon
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={active(item.href) ? "page" : undefined}
+                onClick={() => setMoreOpen(false)}
+                className={cn(
+                  "flex min-h-12 items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors",
+                  active(item.href) ? "bg-primary/10 text-primary" : "text-foreground hover:bg-secondary/70",
+                )}
+              >
+                <Icon className="size-4 shrink-0" />
+                <span className="min-w-0 truncate">{item.label}</span>
+              </Link>
+            )
+          })}
+        </div>
+      ) : null}
     </nav>
   )
 }
-
 export function Shell({ children }: { children: React.ReactNode }) {
   const {
     ready,
@@ -230,22 +281,30 @@ export function Shell({ children }: { children: React.ReactNode }) {
               <p className="font-heading text-lg font-semibold leading-tight tracking-tight">Pengurusan Pesakit Dialisis</p>
               <p className="mt-1 text-xs text-muted-foreground">{profile?.role === "super_admin" ? "Portal master admin" : profile?.role === "pesakit" ? "Portal pesakit" : "Ringkasan operasi"}</p>
             </div>
-            <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center">
-              <p className="hidden text-sm text-muted-foreground md:block">Tapis centre</p>
-              <div className="w-full sm:max-w-sm">
-                <ChoiceSelect
-                  value={centreFilter}
-                  onChange={setCentreFilter}
-                  placeholder="Semua centre"
-                  options={[
-                    { value: "all", label: "Semua centre" },
-                    ...centres.map((centre) => ({
-                      value: centre.id,
-                      label: `${centre.name}, ${centre.city}`,
-                    })),
-                  ]}
-                />
-              </div>
+            <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
+              {source === "local" ? (
+                <>
+                  <p className="hidden text-sm font-medium text-muted-foreground md:block">Tapis centre</p>
+                  <div className="w-full sm:max-w-sm">
+                    <ChoiceSelect
+                      value={centreFilter}
+                      onChange={setCentreFilter}
+                      placeholder="Semua centre"
+                      options={[
+                        { value: "all", label: "Semua centre" },
+                        ...centres.map((centre) => ({
+                          value: centre.id,
+                          label: `${centre.name}, ${centre.city}`,
+                        })),
+                      ]}
+                    />
+                  </div>
+                </>
+              ) : (
+                <p className="hidden text-sm font-medium text-muted-foreground md:block">
+                  {profile?.role === "super_admin" ? "Kawalan akses portal" : "Rekod kesihatan peribadi"}
+                </p>
+              )}
             </div>
             <div className="flex flex-wrap gap-2">
               {source === "supabase" ? (
