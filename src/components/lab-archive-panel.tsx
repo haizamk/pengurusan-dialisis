@@ -59,6 +59,8 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
   const [activeId, setActiveId] = useState<string | null>(null)
   const [duplicateFile, setDuplicateFile] = useState<File | null>(null)
   const [reading, setReading] = useState(false)
+  const [uploadStage, setUploadStage] = useState<"validating" | "archiving" | "extracting" | "saving" | "done" | "error" | null>(null)
+  const [analysisStage, setAnalysisStage] = useState<"session" | "sending" | "analysing" | "saving" | null>(null)
   const [analysing, setAnalysing] = useState(false)
   const [parameter, setParameter] = useState("all")
   const [range, setRange] = useState<"3m" | "6m" | "12m" | "all">("all")
@@ -113,14 +115,17 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
   async function upload(file: File, allowDuplicate: boolean) {
     if (!patientId || readingRef.current) return
     const typed = file.type ? file : new File([file], file.name, { type: mimeFromName(file.name) })
+    setUploadStage("validating")
     const bytes = new Uint8Array(await typed.arrayBuffer())
     const problem = validateLabFile(typed, bytes)
     if (problem) {
+      setUploadStage("error")
       toast.error(problem)
       return
     }
     readingRef.current = true
     setReading(true)
+    setUploadStage("archiving")
     try {
       const stored = await saveLabImport({
         patientId,
@@ -150,6 +155,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
       const document = stored.document
       if (!document) return
       setActiveId(document.id)
+      setUploadStage("extracting")
       let text = ""
       let note: string = PATIENT_STATUS.failed
       let diagnostic: ExtractionDiagnostic | null = null
@@ -184,9 +190,18 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
         dateUncertain,
       })
       const current = loaded.data
+      setUploadStage("saving")
       await commit(applyReextraction(current, document.id, draft))
-      if (draft.observations.length > 0) toast.success(PATIENT_STATUS.found)
-      else toast.message(PATIENT_STATUS.failed)
+      if (draft.observations.length > 0) {
+        setUploadStage("done")
+        toast.success(PATIENT_STATUS.found)
+      } else {
+        setUploadStage("error")
+        toast.message(PATIENT_STATUS.failed)
+      }
+    } catch {
+      setUploadStage("error")
+      toast.error("Proses muat naik terhenti. Semak status fail dan cuba baca semula; laporan asal tidak dipadam.")
     } finally {
       readingRef.current = false
       setReading(false)
@@ -324,6 +339,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
   async function saveAnalysis() {
     if (!data || !patientId || confirmed.length === 0 || analysing) return
     setAnalysing(true)
+    setAnalysisStage("session")
     try {
       const supabase = getSupabase()
       const session = await supabase?.auth.getSession()
@@ -332,6 +348,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
         toast.error("Sesi log masuk tamat. Log masuk semula sebelum menjana analisis AI.")
         return
       }
+      setAnalysisStage("sending")
       const response = await fetch("/api/lab-analysis", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -346,6 +363,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
           })),
         }),
       })
+      setAnalysisStage("analysing")
       const result = await response.json() as {
         error?: string
         version?: string
@@ -357,6 +375,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
         toast.error(result.error ?? "Analisis AI tidak lengkap. Rekod asal tidak diubah.")
         return
       }
+      setAnalysisStage("saving")
       const createdAt = new Date().toISOString()
       const stored = {
         id: crypto.randomUUID(),
@@ -375,6 +394,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
       toast.error("Tidak dapat menjana analisis AI. Rekod asal kekal selamat.")
     } finally {
       setAnalysing(false)
+      setAnalysisStage(null)
     }
   }
 
@@ -420,7 +440,35 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
             <h2 className="font-heading text-2xl">Muat naik laporan</h2>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">PDF, JPG atau PNG sehingga 20 MB. Laporan baharu tidak memadam laporan lama.</p>
           </div>
-          {reading ? <p className="text-sm leading-6">{PATIENT_STATUS.reading}</p> : <p className="text-sm leading-6 text-muted-foreground">{PATIENT_STATUS.waiting}</p>}
+          {reading ? (
+            <div role="status" aria-live="polite" className="rounded-2xl border border-primary/40 bg-primary/10 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-semibold">{uploadStage === "validating" ? "Langkah 1/4 · Semak fail" : uploadStage === "archiving" ? "Langkah 2/4 · Simpan salinan asal" : uploadStage === "extracting" ? "Langkah 3/4 · Baca laporan" : "Langkah 4/4 · Simpan keputusan"}</p>
+                <span className="text-xs text-muted-foreground">Jangan tutup halaman</span>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+                <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: uploadStage === "validating" ? "12%" : uploadStage === "archiving" ? "32%" : uploadStage === "extracting" ? "68%" : "88%" }} />
+              </div>
+              <ol className="mt-3 grid gap-2 text-sm">
+                {[
+                  ["validating", "Semak jenis dan saiz fail"],
+                  ["archiving", "Simpan fail asal ke arkib pesakit"],
+                  ["extracting", "Ekstrak teks dengan Gemini / PDF / OCR"],
+                  ["saving", "Simpan bacaan untuk semakan manual"],
+                ].map(([stage, label], index) => {
+                  const stages = ["validating", "archiving", "extracting", "saving"]
+                  const current = stages.indexOf(uploadStage ?? "")
+                  const complete = index < current
+                  const activeStep = stage === uploadStage
+                  return <li key={stage} className="flex items-center gap-2"><span className={complete ? "text-primary" : activeStep ? "animate-pulse text-primary" : "text-muted-foreground"}>{complete ? "✓" : activeStep ? "●" : "○"}</span><span className={activeStep ? "font-semibold" : "text-muted-foreground"}>{label}</span></li>
+                })}
+              </ol>
+            </div>
+          ) : uploadStage === "done" ? (
+            <div role="status" className="rounded-xl border border-primary/40 bg-primary/10 p-3 text-sm">✓ Bacaan ditemui dan disimpan. Sila semak setiap nilai sebelum mengesahkan.</div>
+          ) : uploadStage === "error" ? (
+            <div role="status" className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm">Proses belum selesai. Semak mesej pada laporan dan cuba baca semula. Fail asal tidak sepatutnya dianggap sebagai keputusan yang telah disahkan.</div>
+          ) : <p className="text-sm leading-6 text-muted-foreground">{PATIENT_STATUS.waiting}</p>}
           <p className="text-sm leading-6 text-muted-foreground">PDF, JPG atau PNG · maksimum 20 MB. PDF imbasan akan cuba dibaca menggunakan OCR jika teks tidak tersedia.</p>
           <label className="flex min-h-12 cursor-pointer items-center justify-center rounded-xl bg-primary px-4 py-3 text-center text-sm font-medium text-primary-foreground">
             Pilih laporan makmal
@@ -542,6 +590,24 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
           <Button type="button" className="!h-12 w-fit" disabled={confirmed.length === 0 || analysing} onClick={() => void saveAnalysis()}>
             {analysing ? "Sedang menjana analisis AI…" : "Jana dan simpan analisis AI"}
           </Button>
+          {analysing && analysisStage ? (
+            <div role="status" aria-live="polite" className="rounded-2xl border border-primary/40 bg-primary/10 p-4">
+              <div className="flex items-center justify-between gap-3"><p className="font-semibold">Analisis AI sedang berjalan</p><span className="animate-pulse text-xs text-primary">Diproses</span></div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: analysisStage === "session" ? "20%" : analysisStage === "sending" ? "40%" : analysisStage === "analysing" ? "72%" : "90%" }} /></div>
+              <ol className="mt-3 grid gap-2 text-sm">
+                {[
+                  ["session", "Sahkan sesi pesakit"],
+                  ["sending", "Hantar keputusan yang disahkan"],
+                  ["analysing", "Gemini menganalisis setiap parameter"],
+                  ["saving", "Simpan analisis dan tip pemakanan"],
+                ].map(([stage, label], index) => {
+                  const stages = ["session", "sending", "analysing", "saving"]
+                  const current = stages.indexOf(analysisStage)
+                  return <li key={stage} className="flex items-center gap-2"><span className={index < current ? "text-primary" : stage === analysisStage ? "animate-pulse text-primary" : "text-muted-foreground"}>{index < current ? "✓" : stage === analysisStage ? "●" : "○"}</span><span className={stage === analysisStage ? "font-semibold" : "text-muted-foreground"}>{label}</span></li>
+                })}
+              </ol>
+            </div>
+          ) : null}
           {(data?.analyses ?? []).map((item) => {
             const body = item.body as { parameters?: Array<{ key?: string; label?: string; value?: number; unit?: string; date?: string; status?: string; interpretation?: string; foodTips?: string[]; followUp?: string }> }
             const aiParameters = item.version.startsWith("gemini-") ? body.parameters ?? [] : []
