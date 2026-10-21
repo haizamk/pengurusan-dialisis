@@ -125,7 +125,7 @@ function MobileNav() {
     <nav
       aria-label="Navigasi utama"
       className={cn(
-        "fixed inset-x-0 bottom-0 z-30 grid gap-1 border-t border-border/80 bg-card/95 px-2 pt-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] shadow-[0_-12px_35px_rgba(0,0,0,0.18)] backdrop-blur-xl md:hidden",
+        "fixed inset-x-0 bottom-0 z-30 grid gap-1 border-t border-border/80 bg-card/95 px-2 pt-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] shadow-[0_-12px_35px_rgba(0,0,0,0.18)] backdrop-blur-xl lg:hidden",
         showMore ? "grid-cols-4" : "grid-cols-2",
       )}
     >
@@ -240,7 +240,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
       ) : null}
     <div className={showApp ? "min-h-dvh bg-[radial-gradient(ellipse_at_top,rgba(25,113,125,0.10),transparent_42%),var(--background)]" : "hidden"} aria-hidden={showApp ? undefined : true}>
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 flex-col border-r border-sidebar-border/80 bg-sidebar text-sidebar-foreground shadow-xl shadow-black/10 md:flex">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 flex-col border-r border-sidebar-border/80 bg-sidebar text-sidebar-foreground shadow-xl shadow-black/10 lg:flex">
         <div className="border-b border-sidebar-border/80 px-5 py-6">
           <div className="flex items-center gap-3">
             <div className="flex size-11 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-300 to-cyan-500 font-bold text-slate-950 shadow-lg shadow-teal-950/25">P</div>
@@ -276,10 +276,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <div className="min-w-0 md:pl-72">
+      <div className="min-w-0 lg:pl-72">
         <header className="sticky top-0 z-20 border-b border-border/70 bg-background/85 backdrop-blur-xl">
-          <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5 md:flex-row md:items-center md:justify-between md:px-8">
-            <div className="flex min-w-0 flex-1 items-center gap-3 md:hidden">
+          <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+            <div className="flex min-w-0 flex-1 items-center gap-3 lg:hidden">
               <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-300 to-cyan-500 text-slate-950 shadow-md shadow-teal-950/20" aria-hidden="true">
                 <ShieldCheck className="size-6" />
               </span>
@@ -290,14 +290,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
               </div>
             </div>
             {source === "supabase" ? (
-              <Button variant="outline" className="h-10 shrink-0 rounded-xl px-3 md:hidden" disabled={busy} onClick={() => void signOut()}>
+              <Button variant="outline" className="h-10 shrink-0 rounded-xl px-3 lg:hidden" disabled={busy} onClick={() => void signOut()}>
                 Keluar
               </Button>
             ) : null}
-            <div className="hidden min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center md:flex">
+            <div className="hidden min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center lg:flex">
               {source === "local" ? (
                 <>
-                  <p className="hidden text-sm font-medium text-muted-foreground md:block">Tapis centre</p>
+                  <p className="hidden text-sm font-medium text-muted-foreground lg:block">Tapis centre</p>
                   <div className="w-full sm:max-w-sm">
                     <ChoiceSelect
                       value={centreFilter}
@@ -314,7 +314,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
                   </div>
                 </>
               ) : (
-                <p className="hidden text-sm font-medium text-muted-foreground md:block">
+                <p className="hidden text-sm font-medium text-muted-foreground lg:block">
                   {profile?.role === "super_admin" ? "Kawalan akses portal" : "Rekod kesihatan peribadi"}
                 </p>
               )}
@@ -333,19 +333,19 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           {source === "local" ? (
-            <p className="border-t border-border px-4 py-2 text-sm leading-6 text-muted-foreground md:px-8">
+            <p className="border-t border-border px-4 py-2 text-sm leading-6 text-muted-foreground lg:px-8">
               Mod pengembangan: data contoh pada pelayar ini, bukan rekod pesakit sebenar.
             </p>
           ) : null}
           {error ? (
-            <p className="border-t border-destructive/20 bg-destructive/10 px-4 py-2 text-sm text-destructive md:px-8">
+            <p className="border-t border-destructive/20 bg-destructive/10 px-4 py-2 text-sm text-destructive lg:px-8">
               {source === "supabase"
                 ? `Supabase tidak dapat dibaca (${error}).`
                 : `Supabase tidak dapat dibaca (${error}). Aplikasi menggunakan data tempatan.`}
             </p>
           ) : null}
         </header>
-        <main id="main-content" className="mx-auto w-full max-w-[1680px] min-w-0 px-4 py-5 pb-28 sm:px-6 sm:py-7 md:px-8 md:pb-12 xl:px-10 2xl:px-12">{children}</main>
+        <main id="main-content" className="mx-auto w-full max-w-[1680px] min-w-0 px-4 py-5 pb-28 sm:px-6 sm:py-7 lg:px-8 lg:pb-12 xl:px-10 2xl:px-12">{children}</main>
       </div>
 
       <Suspense fallback={null}>
