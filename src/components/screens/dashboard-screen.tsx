@@ -165,9 +165,9 @@ function AdminOverview({ applications, centresCount }: { applications: { userId:
 
 function Metric({ icon: Icon, label, value, detail }: { icon: typeof Users; label: string; value: string; detail: string }) {
   return (
-    <article className="rounded-2xl border border-border/80 bg-card p-4 shadow-sm transition hover:border-primary/35 sm:p-5">
+    <article className="rounded-2xl border border-border/80 bg-card p-3 shadow-sm transition hover:border-primary/35 sm:p-5">
       <div className="flex items-start justify-between gap-3"><p className="text-sm font-medium text-muted-foreground">{label}</p><span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Icon className="size-5" /></span></div>
-      <p className="mt-4 text-3xl font-semibold tabular-nums tracking-tight">{value}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</p>
+      <p className="mt-2 text-3xl font-semibold tabular-nums tracking-tight sm:mt-4">{value}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</p>
     </article>
   )
 }

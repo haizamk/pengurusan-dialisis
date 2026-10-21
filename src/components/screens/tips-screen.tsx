@@ -1,5 +1,6 @@
 "use client"
 
+import { HeartPulse, ShieldCheck } from "lucide-react"
 import { Disclaimer, PageHeader } from "@/components/page-header"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ACCESS_LABEL } from "@/lib/format"
@@ -7,18 +8,18 @@ import { CARE_TIPS, FOOD_TIPS, type TipCard } from "@/lib/tips"
 
 export function TipsScreen() {
   return (
-    <div>
+    <div className="space-y-6 sm:space-y-8">
       <PageHeader
         eyebrow="Pendidikan"
         title="Makanan dan penjagaan tapak"
         description="Panduan am untuk pesakit hemodialisis di Malaysia. Centre masih menentukan sukatan, had cecair, dan ubat setiap orang."
       />
       <Tabs defaultValue="makanan">
-        <TabsList className="h-auto w-full flex-wrap sm:w-fit">
-          <TabsTrigger value="makanan" className="h-10 px-4">
+        <TabsList className="h-auto w-full flex-wrap rounded-2xl border border-border/80 bg-card p-1.5 sm:w-fit">
+          <TabsTrigger value="makanan" className="h-11 rounded-xl px-4">
             Makanan
           </TabsTrigger>
-          <TabsTrigger value="tapak" className="h-10 px-4">
+          <TabsTrigger value="tapak" className="h-11 rounded-xl px-4">
             Tapak dialisis
           </TabsTrigger>
         </TabsList>
@@ -29,9 +30,9 @@ export function TipsScreen() {
             ))}
           </div>
         </TabsContent>
-        <TabsContent value="tapak" className="mt-4 grid gap-6">
+        <TabsContent value="tapak" className="mt-5 grid gap-6">
           {(Object.keys(CARE_TIPS) as (keyof typeof CARE_TIPS)[]).map((key) => (
-            <section key={key}>
+            <section key={key} className="space-y-3">
               <h2 className="font-heading text-2xl">
                 {key === "kecemasan"
                   ? "Tanda kecemasan"
@@ -55,8 +56,8 @@ export function TipsScreen() {
 
 function TipArticle({ tip, warn }: { tip: TipCard; warn?: boolean }) {
   return (
-    <article className={`rounded-2xl p-5 ring-1 ${warn ? "bg-destructive/5 ring-destructive/20" : "bg-card ring-foreground/10"}`}>
-      <h3 className="font-heading text-xl">{tip.title}</h3>
+    <article className={`rounded-2xl border p-5 shadow-sm ${warn ? "border-destructive/30 bg-destructive/5" : "border-border/80 bg-card"}`}>
+      <div className="flex items-start gap-3"><span className={`mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl ${warn ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary"}`}>{warn ? <HeartPulse className="size-4" /> : <ShieldCheck className="size-4" />}</span><h3 className="font-heading text-xl">{tip.title}</h3></div>
       <p className="mt-2 text-sm leading-6">{tip.body}</p>
       {tip.items ? (
         <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-6 text-muted-foreground">

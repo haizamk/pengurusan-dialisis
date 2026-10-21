@@ -261,7 +261,7 @@ export function SessionEditor({
 
   return (
     <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-      <form className="grid gap-4 rounded-2xl bg-card p-5 ring-1 ring-foreground/10" onSubmit={submit}>
+      <form className="grid gap-4 rounded-2xl border border-border/80 bg-card p-4 shadow-sm sm:p-5" onSubmit={submit}>
         <div>
           <h2 className="font-heading text-2xl">{draft.id ? "Kemas kini sesi" : "Rekod sesi baharu"}</h2>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
@@ -384,7 +384,7 @@ function MonitoringReadout({
     weightLabel: "berat kering sesi ini",
   })
   return (
-    <section className="rounded-2xl bg-card p-5 ring-1 ring-foreground/10">
+    <section className="rounded-2xl border border-border/80 bg-card p-4 shadow-sm sm:p-5">
       <h2 className="font-heading text-2xl">Tiga angka yang berbeza</h2>
       <ul className="mt-3 space-y-2 text-sm leading-6">
         <li>UF mesin: {machineUfMl == null ? "Belum direkodkan" : `${machineUfMl} mL`}</li>

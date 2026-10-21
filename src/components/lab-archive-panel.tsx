@@ -405,7 +405,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
           {data && data.documents.length === 0 && ownLabs.length === 0 ? <p className="text-sm leading-6 text-muted-foreground">{EMPTY}</p> : null}
           <div className="grid gap-3">
             {(data?.documents ?? []).map((document) => (
-              <article key={document.id} className="rounded-2xl bg-card p-4 ring-1 ring-foreground/10">
+              <article key={document.id} className="rounded-2xl border border-border/80 bg-card p-4 shadow-sm">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <h3 className="text-base font-medium">{document.fileName}</h3>
@@ -450,7 +450,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
               <button
                 key={item}
                 type="button"
-                className={`min-h-12 rounded-lg px-3 text-sm ${range === item ? "bg-primary text-primary-foreground" : "bg-muted"}`}
+                className={`min-h-12 rounded-xl border px-4 text-sm font-semibold transition-colors ${range === item ? "border-primary bg-primary/15 text-primary" : "border-border bg-background hover:bg-secondary/70"}`}
                 onClick={() => {
                   setToday(new Date().toISOString().slice(0, 10))
                   setRange(item)
@@ -550,7 +550,7 @@ function ReviewCard({
   }
 
   return (
-    <div className="grid gap-4 rounded-2xl bg-card p-4 ring-1 ring-foreground/10">
+    <div className="grid gap-4 rounded-2xl border border-border/80 bg-card p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="font-heading text-2xl">Semakan {document.fileName}</h3>
         <Button type="button" variant="outline" className="!h-12" onClick={onOpen}>Buka fail asal</Button>

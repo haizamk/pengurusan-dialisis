@@ -47,10 +47,17 @@ export function PatientDetailScreen() {
 
   if (!ready) return <LoadingBlock />
 
+  if (profile?.role === "super_admin") {
+    return <PageHeader eyebrow="Kawalan akses" title="Rekod klinikal" description="Maklumat kesihatan pesakit tidak dipaparkan dalam portal Master Admin." />
+  }
+  if (profile?.role === "pesakit" && profile.patientId !== id) {
+    return <PageHeader eyebrow="Kawalan akses" title="Rekod tidak tersedia" description="Akaun pesakit hanya boleh membuka rekod yang dipautkan kepada akaun sendiri." />
+  }
+
   const patient = patients.find((item) => item.id === id)
   if (!patient) {
     return (
-      <div className="rounded-2xl bg-card p-6 ring-1 ring-foreground/10">
+      <div className="rounded-2xl border border-border/80 bg-card p-5 shadow-sm sm:p-6">
         <h1 className="font-heading text-3xl">Pesakit tidak dijumpai</h1>
         <p className="mt-2 text-sm text-muted-foreground">Rekod ini tiada dalam data semasa.</p>
         <Link href="/pesakit" className="mt-4 inline-block text-sm text-primary underline">
@@ -68,18 +75,20 @@ export function PatientDetailScreen() {
   const age = ageFromDob(patient.dateOfBirth)
 
   return (
-    <div>
+    <div className="space-y-6 sm:space-y-8">
       <PageHeader
         eyebrow={centre ? `${centre.name}, ${centre.city}` : "Centre"}
         title={patient.fullName}
         description={`${patient.mrn} · ${SEX_LABEL[patient.sex]}${age != null ? ` · ${age} tahun` : ""} · ${patient.schedule}`}
         action={
           <>
-            <Button variant="outline" className="h-11" onClick={() => setEditOpen(true)}>
-              Kemas kini
-            </Button>
+            {profile?.role !== "pesakit" ? (
+              <Button variant="outline" className="h-11 rounded-xl" onClick={() => setEditOpen(true)}>
+                Kemas kini profil
+              </Button>
+            ) : null}
             <Button
-              className="h-11"
+              className="h-11 rounded-xl"
               onClick={() => {
                 setSessionId(undefined)
                 setShowSession(true)
@@ -115,7 +124,7 @@ export function PatientDetailScreen() {
 
       <div className="mt-6">
         {analysis ? <UfPanel analysis={analysis} /> : (
-          <p className="rounded-2xl bg-card p-5 text-sm text-muted-foreground ring-1 ring-foreground/10">
+          <p className="rounded-2xl border border-border/80 bg-card p-5 text-sm text-muted-foreground shadow-sm">
             Belum ada sesi. Rekod berat semasa tiba untuk mengira UF seterusnya.
           </p>
         )}
@@ -140,19 +149,19 @@ export function PatientDetailScreen() {
         </div>
       ) : null}
 
-      <section className="mt-6 rounded-2xl bg-card p-5 ring-1 ring-foreground/10">
+      <section className="rounded-3xl border border-border/80 bg-card p-4 shadow-sm sm:p-6">
         <h2 className="font-heading text-2xl">Trend berat</h2>
         <div className="mt-4">
           <WeightChart sessions={history} />
         </div>
       </section>
 
-      <section className="mt-6 rounded-2xl bg-card p-5 ring-1 ring-foreground/10">
+      <section className="mt-6 rounded-2xl border border-border/80 bg-card p-4 shadow-sm sm:p-5">
         <h2 className="font-heading text-2xl">Sesi dialisis</h2>
         {history.length === 0 ? (
           <p className="mt-3 text-sm text-muted-foreground">Belum ada sesi.</p>
         ) : (
-          <Table className="mt-3">
+          <div className="mt-3 overflow-x-auto rounded-xl border border-border/80"><Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Tarikh</TableHead>
@@ -200,11 +209,11 @@ export function PatientDetailScreen() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </Table></div>
         )}
       </section>
 
-      <section className="mt-6 rounded-2xl bg-card p-5 ring-1 ring-foreground/10">
+      <section className="mt-6 rounded-2xl border border-border/80 bg-card p-4 shadow-sm sm:p-5">
         <h2 className="font-heading text-2xl">Rekod darah</h2>
         {labHistory.length === 0 ? (
           <p className="mt-3 text-sm text-muted-foreground">Belum ada sampel.</p>
@@ -277,7 +286,7 @@ export function PatientDetailScreen() {
         )}
       </section>
 
-      {source === "local" || profile?.role === "super_admin" ? (
+      {source === "local" ? (
         <div className="mt-6">
           <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
             Padam pesakit
@@ -285,7 +294,7 @@ export function PatientDetailScreen() {
         </div>
       ) : null}
 
-      <PatientDialog open={editOpen} onOpenChange={setEditOpen} patient={patient} />
+      {profile?.role !== "pesakit" ? <PatientDialog open={editOpen} onOpenChange={setEditOpen} patient={patient} /> : null}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
           <DialogHeader>
@@ -322,7 +331,7 @@ export function PatientDetailScreen() {
 
 function Info({ label, value }: { label: string; value: string }) {
   return (
-    <article className="rounded-2xl bg-card px-4 py-4 ring-1 ring-foreground/10">
+    <article className="rounded-2xl border border-border/80 bg-card p-4 shadow-sm">
       <p className="text-xs tracking-wide text-muted-foreground uppercase">{label}</p>
       <p className="mt-2 text-sm leading-6 font-medium">{value}</p>
     </article>

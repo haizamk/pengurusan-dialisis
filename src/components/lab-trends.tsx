@@ -27,7 +27,7 @@ export function LabTrends({ labs }: { labs: BloodRecord[] }) {
   const present = MARKERS.filter((marker) => visible.some((lab) => lab[marker.key] != null))
 
   return (
-    <section className="mt-6">
+    <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-heading text-2xl">Sejarah setiap ujian</h2>
         <div className="flex flex-wrap gap-2">
@@ -35,7 +35,7 @@ export function LabTrends({ labs }: { labs: BloodRecord[] }) {
             <button
               key={key}
               type="button"
-              className={`min-h-12 rounded-lg px-3 text-sm ${key === range ? "bg-primary text-primary-foreground" : "bg-muted"}`}
+              className={`min-h-12 rounded-xl border px-4 text-sm font-semibold transition-colors ${key === range ? "border-primary bg-primary/15 text-primary" : "border-border bg-background hover:bg-secondary/70"}`}
               onClick={() => setRange(key)}
             >
               {key === "bulan" ? "Bulan" : key === "enam" ? "6 bulan" : key === "tahun" ? "Setahun" : "Semua"}
@@ -63,7 +63,7 @@ function MarkerCard({ markerKey, labs }: { markerKey: MarkerKey; labs: BloodReco
     .filter((point): point is { date: string; value: number } => point.value != null)
     .sort((a, b) => a.date.localeCompare(b.date))
   return (
-    <article className="rounded-2xl bg-card p-4 ring-1 ring-foreground/10">
+    <article className="rounded-2xl border border-border/80 bg-card p-4 shadow-sm sm:p-5">
       <h3 className="font-heading text-xl">{marker.label}</h3>
       <p className="text-sm text-muted-foreground">{marker.unit}. {marker.hint}</p>
       {points.length < 2 ? (

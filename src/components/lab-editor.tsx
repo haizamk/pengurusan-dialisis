@@ -146,7 +146,7 @@ export function LabEditor({
   }
 
   return (
-    <form className="grid gap-4 rounded-2xl bg-card p-5 ring-1 ring-foreground/10" onSubmit={submit}>
+    <form className="grid gap-4 rounded-2xl border border-border/80 bg-card p-4 shadow-sm sm:p-5" onSubmit={submit}>
       <div>
         <h2 className="font-heading text-2xl">{draft.id ? "Kemas kini rekod darah" : "Rekod darah baharu"}</h2>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">

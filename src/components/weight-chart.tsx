@@ -66,7 +66,7 @@ export function WeightChart({ sessions }: { sessions: DialysisSession[] }) {
           <button
             key={item.key}
             type="button"
-            className={`min-h-12 rounded-lg px-3 text-sm ${item.key === range ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"}`}
+            className={`min-h-12 rounded-xl border px-4 text-sm font-semibold transition-colors ${item.key === range ? "border-primary bg-primary/15 text-primary" : "border-border bg-background text-foreground hover:bg-secondary/70"}`}
             onClick={() => setRange(item.key)}
           >
             {item.label}
@@ -76,7 +76,7 @@ export function WeightChart({ sessions }: { sessions: DialysisSession[] }) {
       {data.length === 0 ? (
         <p className="text-sm leading-6 text-muted-foreground">Tiada sesi dalam julat tarikh ini.</p>
       ) : (
-        <div className="h-80 w-full min-w-0">
+        <div className="h-72 w-full min-w-0 sm:h-80">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
               <CartesianGrid stroke="oklch(0.46 0.03 230)" vertical={false} />
