@@ -37,7 +37,7 @@ const schema = {
 
 async function authorised(request: Request) {
   if (!isSupabaseConfigured()) return false
-  const token = request.headers.get("authorization")?.replace(/^Bearer\\s+/i, "").trim()
+  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim()
   if (!token) return false
   const client = createClient(supabaseUrl(), supabaseAnonKey(), {
     auth: { persistSession: false, autoRefreshToken: false },
