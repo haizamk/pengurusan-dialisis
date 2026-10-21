@@ -104,9 +104,8 @@ export async function extractWithGemini(
   // 3) Independent Nous fallback. Prefer OCR text if Mistral succeeded; otherwise send the source file to Nous.
   if (nousKey) {
     try {
-      const text = mistralText.trim()
-        ? await requestNousText({ text: mistralText, key: nousKey })
-        : await requestNousText({ text: await requestMistralOcr({ bytes, mime, key: process.env.MISTRAL_API_KEY?.trim() || "" }), key: nousKey })
+      if (!mistralText.trim()) throw new Error("Nous memerlukan teks OCR Mistral; OCR tidak berjaya untuk dokumen ini.")
+      const text = await requestNousText({ text: mistralText, key: nousKey })
       const result = validateAndMap(text)
       if (result) return { ok: true, payload: result.payload, extract: { ...result.report, model: mistralText.trim() ? "mistral-ocr-latest + nous" : "nous", rejected: result.rejected } }
       throw new Error("Nous tidak memulangkan keputusan makmal yang sah.")
