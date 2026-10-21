@@ -16,7 +16,7 @@ function missing(value: string | null | undefined) {
 
 export function PatientHome() {
   const { profile, patients, sessions, labs } = useStore()
-  const patient = patients.find((item) => item.id === profile?.patientId) ?? patients[0] ?? null
+  const patient = patients.find((item) => item.id === profile?.patientId) ?? null
   const ownSessions = patient ? sessions.filter((session) => session.patientId === patient.id) : []
   const ownLabs = patient ? labs.filter((lab) => lab.patientId === patient.id) : []
   const latest = [...ownSessions].sort((a, b) => b.sessionDate.localeCompare(a.sessionDate))[0] ?? null
