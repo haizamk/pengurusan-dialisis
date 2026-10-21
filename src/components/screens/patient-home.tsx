@@ -25,17 +25,17 @@ export function PatientHome() {
   const firstName = name.trim().split(/\s+/)[0] || "pesakit"
 
   return (
-    <div className="space-y-6 sm:space-y-8">
-      <section className="relative overflow-hidden rounded-3xl border border-primary/20 bg-gradient-to-br from-[#123b4a] via-[#124957] to-[#126b70] p-5 shadow-lg shadow-black/10 sm:p-8">
+    <div className="space-y-5 sm:space-y-8">
+      <section className="relative overflow-hidden rounded-3xl border border-primary/20 bg-gradient-to-br from-[#123b4a] via-[#124957] to-[#126b70] p-4 shadow-lg shadow-black/10 sm:p-8">
         <div aria-hidden="true" className="pointer-events-none absolute -right-10 -top-16 h-56 w-56 rounded-full border-[32px] border-white/[0.04]" />
         <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 right-24 h-48 w-48 rounded-full bg-teal-300/10 blur-2xl" />
         <div className="relative max-w-3xl">
           <p className="text-xs font-bold tracking-[0.2em] text-teal-200 uppercase">Ruang kesihatan peribadi</p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white sm:text-4xl">Selamat kembali, {firstName}</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-teal-50/80 sm:text-base">
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:mt-3 sm:text-4xl">Selamat kembali, {firstName}</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-teal-50/80 sm:mt-3 sm:text-base">
             Semua rekod dialisis dan keputusan darah anda di satu tempat. Maklumat dipaparkan berdasarkan rekod yang telah disimpan.
           </p>
-          <div className="mt-6 flex flex-wrap gap-3">
+          <div className="mt-4 flex flex-wrap gap-2 sm:mt-6 sm:gap-3">
             <Link href="/dialisis" className={cn(buttonVariants(), "h-11 bg-teal-300 text-slate-950 hover:bg-teal-200")}>
               <Activity className="mr-2 size-4" /> Tambah sesi
             </Link>
@@ -99,15 +99,15 @@ function Fact({
   detail: string
 }) {
   return (
-    <article className="group rounded-2xl border border-border/80 bg-card p-4 shadow-sm transition hover:border-primary/40 sm:p-5">
+    <article className="group rounded-2xl border border-border/80 bg-card p-3 shadow-sm transition hover:border-primary/40 sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <p className="text-sm font-medium text-muted-foreground">{label}</p>
         <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
           <Icon className="size-5" />
         </span>
       </div>
-      <p className="mt-4 break-words text-xl font-semibold leading-snug tracking-tight sm:text-2xl">{value}</p>
-      <p className="mt-2 text-xs leading-5 text-muted-foreground">{detail}</p>
+      <p className="mt-2 break-words text-xl font-semibold leading-snug tracking-tight sm:mt-4 sm:text-2xl">{value}</p>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</p>
     </article>
   )
 }
