@@ -37,6 +37,37 @@ test("nilai atau unit yang tidak lengkap ditanda tidak pasti dan tidak diteka", 
   assert.equal(creatinine?.uncertain, true)
 })
 
+test("ketidaksamaan, tanda negatif, dan notasi sains tidak diubah menjadi tekaan", () => {
+  const parsed = parseLabText("Tarikh: 2026-03-12\nPotassium <5.5 mmol/L\nPotassium -2.5 mmol/L\nFerritin 1.25e2 ng/ml\nHemoglobin 10.4 9.8 g/dL\nGlukosa 5.6 mmol/L\nHemoglobin 10,4 g/dL")
+  const bounded = parsed.observations.find((item) => item.snippet.includes("<5.5"))
+  assert.equal(bounded?.value, null)
+  assert.equal(bounded?.uncertain, true)
+  assert.match(bounded?.snippet ?? "", /</)
+  const negative = parsed.observations.find((item) => item.snippet.includes("-2.5"))
+  assert.equal(negative?.value, -2.5)
+  assert.equal(negative?.unit, "mmol/l")
+  const ferritin = parsed.observations.find((item) => item.standardKey === "ferritin")
+  assert.equal(ferritin?.value, 125)
+  assert.equal(ferritin?.unit, "ng/ml")
+  const doubled = parsed.observations.find((item) => item.snippet.includes("10.4 9.8"))
+  assert.equal(doubled?.value, null)
+  const glucose = parsed.observations.find((item) => item.snippet.toLowerCase().includes("glukosa"))
+  assert.equal(glucose?.standardKey, null)
+  assert.equal(glucose?.value, 5.6)
+  assert.equal(glucose?.uncertain, true)
+  const comma = parsed.observations.find((item) => item.snippet.includes("10,4"))
+  assert.equal(comma?.value, 10.4)
+  assert.equal(comma?.unit, "g/dl")
+})
+
+test("nombor pada baris lain tidak digabung dengan nama ujian", () => {
+  const parsed = parseLabText("Hemoglobin\n10.4 g/dL")
+  assert.equal(parsed.observations.find((item) => item.originalName === "Hemoglobin")?.value, null)
+  const loose = parsed.observations.find((item) => item.snippet.includes("10.4"))
+  assert.equal(loose?.standardKey, null)
+  assert.equal(loose?.uncertain, true)
+})
+
 test("fail ditolak jika sambungan tidak sepadan dengan kandungan", () => {
   const error = validateLabFile(
     { name: "laporan.pdf", type: "application/pdf", size: 4 },
@@ -44,6 +75,8 @@ test("fail ditolak jika sambungan tidak sepadan dengan kandungan", () => {
   )
   assert.match(error ?? "", /PDF, JPG atau PNG/)
   assert.equal(validateLabFile({ name: "a.pdf", type: "application/pdf", size: 4 }, new Uint8Array([0x25, 0x50, 0x44, 0x46])), null)
+  assert.equal(validateLabFile({ name: "imbasan.pdf", type: "application/octet-stream", size: 4 }, new Uint8Array([0x25, 0x50, 0x44, 0x46])), null)
+  assert.match(validateLabFile({ name: "salah.pdf", type: "application/pdf", size: 8 }, new Uint8Array([0x25, 0x50, 0x44, 0x46])) ?? "", /8 MB|1 bait/)
 })
 
 test("siri carta tidak mengisi nilai kosong sebagai sifar dan tidak mencampur unit", () => {

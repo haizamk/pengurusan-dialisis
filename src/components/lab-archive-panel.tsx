@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { toast } from "sonner"
 import { ChoiceSelect } from "@/components/choice-select"
 import { DietEducation } from "@/components/diet-education"
@@ -20,6 +20,8 @@ import {
 import {
   BLOOD_RECORD_FIELDS,
   applyConfirmation,
+  applyReextraction,
+  draftFromText,
   auditChange,
   loadLabArchive,
   openLabDocument,
@@ -30,8 +32,8 @@ import {
   type LabDocument,
   type LabObservation,
 } from "@/lib/lab-archive"
-import { LAB_PARAMETERS, validateLabFile, type ExtractionStatus } from "@/lib/lab-parse"
-import { textFromPdfBytes } from "@/lib/pdf-text"
+import { LAB_PARAMETERS, validateLabFile } from "@/lib/lab-parse"
+import { extractReport, PATIENT_STATUS, type ExtractionDiagnostic } from "@/lib/pdf-text"
 import { useStore } from "@/lib/store"
 import type { BloodRecord } from "@/lib/types"
 import { formatDate } from "@/lib/format"
@@ -54,10 +56,13 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
   const [cloudNote, setCloudNote] = useState<string | null>(null)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [duplicateFile, setDuplicateFile] = useState<File | null>(null)
+  const [reading, setReading] = useState(false)
   const [parameter, setParameter] = useState("all")
   const [range, setRange] = useState<"3m" | "6m" | "12m" | "all">("all")
   const [today, setToday] = useState("")
   const pendingLabs = useRef(new Map<string, BloodRecord>())
+  const readingRef = useRef(false)
+  const showDiagnostics = useSyncExternalStore(subscribeDiagnostics, readDiagnostics, () => false)
 
   useEffect(() => {
     if (!patientId) return
@@ -103,7 +108,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
   }
 
   async function upload(file: File, allowDuplicate: boolean) {
-    if (!patientId) return
+    if (!patientId || readingRef.current) return
     const typed = file.type ? file : new File([file], file.name, { type: mimeFromName(file.name) })
     const bytes = new Uint8Array(await typed.arrayBuffer())
     const problem = validateLabFile(typed, bytes)
@@ -111,47 +116,103 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
       toast.error(problem)
       return
     }
-    let text = ""
-    let extractionStatus: ExtractionStatus = "tiada_teks"
-    let note = "Imej disimpan. Tiada perkhidmatan OCR dikonfigurkan, jadi tiada nilai diekstrak. Isi keputusan yang anda nampak. Tiada nilai diteka."
-    if (typed.type === "application/pdf") {
-      try {
-        text = await textFromPdfBytes(bytes)
-        extractionStatus = text ? "terbaca" : "tiada_teks"
-        note = text
-          ? "Teks PDF dibaca. Nilai yang tidak lengkap ditanda untuk semakan dan belum disahkan."
-          : "PDF disimpan tetapi tiada teks boleh dibaca. Jika ini imbasan, isi nilai semasa semakan."
-      } catch {
-        extractionStatus = "gagal"
-        note = "PDF disimpan tetapi teks tidak dapat dibaca. Laporan tetap boleh dibuka. Isi nilai semasa semakan."
+    readingRef.current = true
+    setReading(true)
+    try {
+      const stored = await saveLabImport({
+        patientId,
+        fileName: typed.name,
+        mime: typed.type,
+        bytes,
+        text: "",
+        note: PATIENT_STATUS.reading,
+        extractionStatus: "gagal",
+        processingStatus: "membaca",
+        allowDuplicate,
+      })
+      if (stored.error) {
+        toast.error(stored.error)
+        return
       }
+      if (stored.duplicate) {
+        setDuplicateFile(typed)
+        toast.message("Fail yang sama pernah dimuat naik. Gunakan Cuba baca semula pada laporan itu, atau simpan sebagai pembetulan jika anda mahu salinan baharu.")
+        return
+      }
+      setDuplicateFile(null)
+      if (stored.cloudNote) setCloudNote(stored.cloudNote)
+      const loaded = await loadLabArchive(patientId)
+      setData(loaded.data)
+      if (loaded.cloudNote) setCloudNote(loaded.cloudNote)
+      const document = stored.document
+      if (!document) return
+      setActiveId(document.id)
+      let text = ""
+      let note: string = PATIENT_STATUS.failed
+      let diagnostic: ExtractionDiagnostic | null = null
+      try {
+        const outcome = await extractReport(bytes, typed)
+        text = outcome.text
+        note = outcome.patientStatus
+        diagnostic = outcome.diagnostic
+      } catch {
+        note = PATIENT_STATUS.failed
+      }
+      const draft = draftFromText({
+        id: document.id,
+        patientId,
+        fileName: typed.name,
+        mime: typed.type,
+        byteSize: bytes.length,
+        sha256: document.sha256,
+        text,
+        uploadedAt: document.uploadedAt,
+        note,
+        extractionStatus: text ? "separa" : "gagal",
+        diagnostic,
+      })
+      const current = loaded.data
+      await commit(applyReextraction(current, document.id, draft))
+      if (draft.observations.length > 0) toast.success(PATIENT_STATUS.found)
+      else toast.message(PATIENT_STATUS.failed)
+    } finally {
+      readingRef.current = false
+      setReading(false)
     }
-    const result = await saveLabImport({
-      patientId,
-      fileName: typed.name,
-      mime: typed.type,
-      bytes,
-      text,
-      note,
-      extractionStatus,
-      allowDuplicate,
-    })
-    if (result.error) {
-      toast.error(result.error)
-      return
+  }
+
+  async function reread(document: LabDocument) {
+    if (!data || !patientId || readingRef.current) return
+    readingRef.current = true
+    setReading(true)
+    try {
+      const blob = await openLabDocument(document)
+      if (!blob) {
+        toast.error("Fail asal tidak dijumpai. Laporan yang dimuat naik tidak dipadam.")
+        return
+      }
+      const bytes = new Uint8Array(await blob.arrayBuffer())
+      const outcome = await extractReport(bytes, { name: document.fileName, type: document.mime || "application/pdf" })
+      const draft = draftFromText({
+        id: document.id,
+        patientId,
+        fileName: document.fileName,
+        mime: document.mime,
+        byteSize: bytes.length,
+        sha256: document.sha256,
+        text: outcome.text,
+        uploadedAt: document.uploadedAt,
+        note: outcome.patientStatus,
+        extractionStatus: outcome.text ? "separa" : "gagal",
+        diagnostic: outcome.diagnostic,
+      })
+      await commit(applyReextraction(data, document.id, draft))
+      if (draft.observations.length > 0) toast.success(PATIENT_STATUS.found)
+      else toast.message(PATIENT_STATUS.failed)
+    } finally {
+      readingRef.current = false
+      setReading(false)
     }
-    if (result.duplicate) {
-      setDuplicateFile(typed)
-      toast.message("Fail yang sama pernah dimuat naik. Simpan sebagai pembetulan hanya jika anda mahu salinan baharu.")
-      return
-    }
-    setDuplicateFile(null)
-    if (result.cloudNote) setCloudNote(result.cloudNote)
-    const loaded = await loadLabArchive(patientId)
-    setData(loaded.data)
-    if (loaded.cloudNote) setCloudNote(loaded.cloudNote)
-    setActiveId(result.document?.id ?? null)
-    toast.success("Laporan disimpan. Sahkan nilai sebelum ia masuk ke rekod dan graf.")
   }
 
   async function confirmRow(row: LabObservation, draft: ReviewDraft) {
@@ -308,11 +369,13 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
             <h2 className="font-heading text-2xl">Muat naik laporan</h2>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">PDF, JPG atau PNG sehingga 8 MB. Laporan baharu tidak memadam laporan lama.</p>
           </div>
+          {reading ? <p className="text-sm leading-6">{PATIENT_STATUS.reading}</p> : <p className="text-sm leading-6 text-muted-foreground">{PATIENT_STATUS.waiting}</p>}
           <label className="flex min-h-12 cursor-pointer items-center justify-center rounded-xl bg-primary px-4 py-3 text-center text-sm font-medium text-primary-foreground">
             Pilih laporan makmal
             <input
               className="sr-only"
               type="file"
+              disabled={reading}
               accept="application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png"
               onChange={(event) => {
                 const file = event.target.files?.[0]
@@ -334,12 +397,14 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
                   <div>
                     <h3 className="text-base font-medium">{document.fileName}</h3>
                     <p className="text-sm leading-6 text-muted-foreground">
-                      {formatDate(document.uploadedAt.slice(0, 10))} · {statusLabel(document.reviewStatus)} · {extractionLabel(document.extractionStatus)}
+                      {formatDate(document.uploadedAt.slice(0, 10))} · {statusLabel(document.reviewStatus)} · {extractionLabel(document)}
                     </p>
                     <p className="text-sm leading-6">{document.note}</p>
+                    {showDiagnostics ? <DiagnosticDetails diagnostic={document.diagnostic} /> : null}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button type="button" variant="outline" className="!h-12" onClick={() => void openDocument(document)}>Buka fail</Button>
+                    <Button type="button" variant="outline" className="!h-12" disabled={reading} onClick={() => void reread(document)}>Cuba baca semula</Button>
                     <Button type="button" className="!h-12" onClick={() => setActiveId(document.id)}>Semak</Button>
                   </div>
                 </div>
@@ -477,7 +542,7 @@ function ReviewCard({
         <h3 className="font-heading text-2xl">Semakan {document.fileName}</h3>
         <Button type="button" variant="outline" className="!h-12" onClick={onOpen}>Buka fail asal</Button>
       </div>
-      {observations.length === 0 ? <p className="text-sm leading-6">Tiada nilai diekstrak. Tambah keputusan yang anda nampak pada laporan. Jangan isi nilai yang tidak pasti.</p> : null}
+      {observations.length === 0 ? <p className="text-sm leading-6">{PATIENT_STATUS.failed} Tambah keputusan yang anda nampak pada laporan. Jangan isi nilai yang tidak pasti.</p> : null}
       {observations.map((row) => {
         const draft = drafts[row.id]
         if (!draft) return null
@@ -552,11 +617,35 @@ function statusLabel(status: LabDocument["reviewStatus"]) {
   return status === "disahkan" ? "Disahkan" : "Perlu semakan"
 }
 
-function extractionLabel(status: ExtractionStatus) {
-  if (status === "terbaca") return "Teks dibaca"
-  if (status === "separa") return "Perlu semakan teks"
-  if (status === "gagal") return "Ekstrak gagal"
-  return "Tiada teks dibaca"
+function subscribeDiagnostics() {
+  return () => {}
+}
+
+function readDiagnostics() {
+  const params = new URLSearchParams(window.location.search)
+  return params.get("diagnostik") === "1" || window.localStorage.getItem("ppd.lab-diagnostics") === "1"
+}
+
+function extractionLabel(document: LabDocument) {
+  if (document.processingStatus === "membaca") return PATIENT_STATUS.reading
+  if (document.extractionStatus === "terbaca" || document.extractionStatus === "separa") return PATIENT_STATUS.found
+  return PATIENT_STATUS.failed
+}
+
+function DiagnosticDetails({ diagnostic }: { diagnostic: ExtractionDiagnostic | null }) {
+  if (!diagnostic) return null
+  return (
+    <details className="mt-2">
+      <summary className="min-h-12 cursor-pointer text-sm">Butiran teknikal</summary>
+      <dl className="grid gap-1 text-sm leading-6 text-muted-foreground">
+        <div>Kaedah: {diagnostic.method}. Peringkat: {diagnostic.stage}.</div>
+        <div>Halaman: {diagnostic.pageCount ?? "tiada"}. Dibaca: {diagnostic.pagesRead}. Gagal: {diagnostic.pagesFailed}. Teks pilihan: {diagnostic.selectableText ? "ya" : "tidak"}.</div>
+        <div>Panjang teks: {diagnostic.textLength}. Calon: {diagnostic.candidates}. Perlu semakan: {diagnostic.needsReview}. Masa: {diagnostic.durationMs} ms.</div>
+        <div>Ralat: {diagnostic.errorCode ?? "tiada"}{diagnostic.errorMessage ? ` — ${diagnostic.errorMessage}` : ""}.</div>
+        <div>Dokumen: {diagnostic.documentId ?? "belum dipaut"}. Percubaan: {diagnostic.attemptId}</div>
+      </dl>
+    </details>
+  )
 }
 
 function mimeFromName(name: string) {

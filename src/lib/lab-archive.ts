@@ -1,10 +1,11 @@
 import { normaliseLabUnit, parseLabText, validateLabFile, type ExtractionStatus } from "@/lib/lab-parse"
+import { PATIENT_STATUS, type ExtractionDiagnostic } from "@/lib/pdf-text"
 import { getSupabase } from "@/lib/supabase"
 
 export type { ExtractionStatus }
 
 export type ReviewStatus = "perlu_semakan" | "disahkan"
-export type ProcessingStatus = "selesai" | "gagal"
+export type ProcessingStatus = "membaca" | "selesai" | "gagal"
 export type ObservationSource = "ekstrak" | "pesakit"
 export type ObservationStatus = "perlu_semakan" | "disahkan"
 
@@ -22,6 +23,7 @@ export type LabDocument = {
   extractionStatus: ExtractionStatus
   reviewStatus: ReviewStatus
   note: string
+  diagnostic: ExtractionDiagnostic | null
 }
 
 export type LabObservation = {
@@ -128,31 +130,49 @@ export function draftFromText(input: {
   uploadedAt: string
   note: string
   extractionStatus: ExtractionStatus
+  processingStatus?: ProcessingStatus
+  diagnostic?: ExtractionDiagnostic | null
 }) {
   const parsed = input.text.trim() ? parseLabText(input.text) : null
+  const parsedRows = parsed?.observations ?? []
   let extractionStatus = input.extractionStatus
-  if (parsed) {
-    if (parsed.observations.length === 0 || parsed.observations.some((item) => item.uncertain)) extractionStatus = "separa"
-    else extractionStatus = "terbaca"
+  let note = input.note
+  if (input.processingStatus === "membaca") {
+    extractionStatus = input.extractionStatus
+  } else if (parsedRows.length > 0) {
+    extractionStatus = parsedRows.some((item) => item.uncertain) || parsed?.dateUncertain ? "separa" : "terbaca"
+    note = PATIENT_STATUS.found
+    if (parsed?.dateUncertain) note = `${note} Tarikh laporan tidak pasti, jadi ia perlu diisi semasa semakan.`
+  } else if (input.text.trim()) {
+    extractionStatus = "gagal"
+    note = `${PATIENT_STATUS.failed} Teks dijumpai tetapi tiada keputusan makmal yang jelas.`
+  } else if (extractionStatus === "tiada_teks") {
+    extractionStatus = "gagal"
+    note = input.note || PATIENT_STATUS.failed
+  }
+  const diagnostic = input.diagnostic ? { ...input.diagnostic, documentId: input.id } : null
+  if (diagnostic && input.processingStatus !== "membaca") {
+    diagnostic.candidates = parsedRows.length
+    diagnostic.needsReview = parsedRows.filter((item) => item.uncertain || !parsed?.reportDate).length
+    diagnostic.stage = parsedRows.length > 0 ? "selesai" : "gagal"
   }
   const document: LabDocument = {
     id: input.id,
     patientId: input.patientId,
-    reportDate: parsed?.reportDate ?? null,
+    reportDate: input.processingStatus === "membaca" ? null : parsed?.reportDate ?? null,
     uploadedAt: input.uploadedAt,
     fileName: input.fileName,
     mime: input.mime,
     byteSize: input.byteSize,
     sha256: input.sha256,
     storagePath: null,
-    processingStatus: "selesai",
     extractionStatus,
     reviewStatus: "perlu_semakan",
-    note: parsed?.dateUncertain && input.text.trim()
-      ? `${input.note} Tarikh laporan tidak pasti, jadi ia perlu diisi semasa semakan.`
-      : input.note,
+    note,
+    diagnostic,
+    processingStatus: input.processingStatus === "membaca" ? "membaca" : parsedRows.length > 0 ? "selesai" : "gagal",
   }
-  const observations: LabObservation[] = (parsed?.observations ?? []).map((item) => ({
+  const observations: LabObservation[] = input.processingStatus === "membaca" ? [] : (parsed?.observations ?? []).map((item) => ({
     id: crypto.randomUUID(),
     patientId: input.patientId,
     documentId: input.id,
@@ -245,6 +265,29 @@ export function withoutDuplicateConfirmed(existing: LabObservation[], incoming: 
   return { saved, skipped }
 }
 
+export function applyReextraction(
+  data: ArchiveData,
+  documentId: string,
+  next: { document: LabDocument; observations: LabObservation[] },
+) {
+  const kept = data.observations.filter((row) => row.documentId !== documentId || row.status === "disahkan")
+  const additions = next.observations.filter((item) => !kept.some((row) =>
+    row.status === "disahkan" &&
+    row.patientId === item.patientId &&
+    row.standardKey != null &&
+    row.standardKey === item.standardKey &&
+    row.takenOn === item.takenOn &&
+    row.unit === item.unit &&
+    row.value === item.value
+  ))
+  const observations = [...kept, ...additions]
+  return {
+    ...data,
+    documents: data.documents.map((document) => document.id === documentId ? { ...next.document, storagePath: document.storagePath ?? next.document.storagePath } : document),
+    observations,
+  }
+}
+
 export function replacePatientRecords(
   data: ArchiveData,
   patientId: string,
@@ -271,6 +314,8 @@ export async function importLabDocument(
     text: string
     note: string
     extractionStatus: ExtractionStatus
+    processingStatus?: ProcessingStatus
+    diagnostic?: ExtractionDiagnostic | null
     allowDuplicate: boolean
     uploadedAt: string
     id?: string
@@ -295,6 +340,8 @@ export async function importLabDocument(
     uploadedAt: input.uploadedAt,
     note: input.note,
     extractionStatus: input.extractionStatus,
+    processingStatus: input.processingStatus,
+    diagnostic: input.diagnostic ?? null,
   })
   store.write({
     ...current,
@@ -380,7 +427,7 @@ function base64ToBytes(value: string) {
   return bytes
 }
 
-function documentRow(document: LabDocument, contentBase64?: string | null) {
+function documentRow(document: LabDocument, contentBase64?: string | null, includeDiagnostic = true) {
   return {
     id: document.id,
     patient_id: document.patientId,
@@ -396,6 +443,7 @@ function documentRow(document: LabDocument, contentBase64?: string | null) {
     extraction_status: document.extractionStatus,
     review_status: document.reviewStatus,
     note: document.note,
+    ...(includeDiagnostic ? { diagnostic: document.diagnostic } : {}),
   }
 }
 
@@ -421,6 +469,18 @@ function observationRow(row: LabObservation) {
   }
 }
 
+async function removeStaleObservations(patientId: string, keepIds: string[]) {
+  const supabase = getSupabase()
+  if (!supabase) return null
+  const existing = await supabase.from("lab_observations").select("id").eq("patient_id", patientId)
+  if (existing.error) return null
+  const keep = new Set(keepIds)
+  const stale = (existing.data ?? []).map((row) => String(row.id)).filter((id) => !keep.has(id))
+  if (stale.length === 0) return null
+  const removed = await supabase.from("lab_observations").delete().eq("patient_id", patientId).in("id", stale)
+  return removed.error ? "Keputusan lama tidak dapat dibuang dari awan. Salinan pelayar sudah dikemas kini." : null
+}
+
 function missingTable(error: { message?: string; code?: string } | null) {
   const message = error?.message?.toLowerCase() ?? ""
   return error?.code === "42P01" || error?.code === "PGRST205" || message.includes("does not exist") || message.includes("schema cache") || message.includes("could not find")
@@ -435,10 +495,12 @@ export async function loadLabArchive(patientId: string) {
   if (!supabase) {
     return { data: filterArchive(local, patientId), cloudNote: "Supabase tidak dikonfigurkan. Laporan disimpan pada pelayar ini sahaja." }
   }
-  const documents = await supabase
-    .from("health_documents")
-    .select("id, patient_id, report_date, uploaded_at, file_name, mime, byte_size, sha256, storage_path, processing_status, extraction_status, review_status, note")
-    .eq("patient_id", patientId)
+  const documentColumns = "id, patient_id, report_date, uploaded_at, file_name, mime, byte_size, sha256, storage_path, processing_status, extraction_status, review_status, note"
+  type DocumentQuery = { data: Record<string, unknown>[] | null; error: { message: string; code?: string } | null }
+  let documents = await supabase.from("health_documents").select(`${documentColumns}, diagnostic`).eq("patient_id", patientId) as DocumentQuery
+  if (documents.error && documents.error.message.toLowerCase().includes("diagnostic")) {
+    documents = await supabase.from("health_documents").select(documentColumns).eq("patient_id", patientId) as DocumentQuery
+  }
   if (documents.error) {
     return { data: filterArchive(local, patientId), cloudNote: missingTable(documents.error) ? SQL_NOTE : "Laporan awan tidak dapat dibaca. Salinan pelayar masih digunakan." }
   }
@@ -481,6 +543,7 @@ function mergeRemote(local: ArchiveData, patientId: string, remote: ArchiveData)
     ...localRow,
     ...remoteRow,
     storagePath: remoteRow.storagePath ?? localRow.storagePath,
+    diagnostic: remoteRow.diagnostic ?? localRow.diagnostic ?? null,
   })).map((document) => {
     const rows = observations.filter((item) => item.documentId === document.id)
     if (rows.length === 0) return document
@@ -498,6 +561,32 @@ function mergeRemote(local: ArchiveData, patientId: string, remote: ArchiveData)
   })
 }
 
+function diagnosticFrom(value: unknown): ExtractionDiagnostic | null {
+  if (!value || typeof value !== "object") return null
+  const row = value as Partial<ExtractionDiagnostic>
+  const stage = row.stage
+  const method = row.method
+  const stages = new Set(["validasi", "teks", "ocr", "parse", "selesai", "gagal"])
+  const methods = new Set(["pdf-teks", "ocr", "pdf-teks+ocr", "tiada"])
+  if (typeof row.attemptId !== "string" || !stage || !stages.has(stage) || !method || !methods.has(method)) return null
+  return {
+    documentId: typeof row.documentId === "string" ? row.documentId : null,
+    attemptId: row.attemptId,
+    stage,
+    method,
+    pageCount: typeof row.pageCount === "number" ? row.pageCount : null,
+    pagesRead: typeof row.pagesRead === "number" ? row.pagesRead : 0,
+    pagesFailed: typeof row.pagesFailed === "number" ? row.pagesFailed : 0,
+    selectableText: Boolean(row.selectableText),
+    textLength: typeof row.textLength === "number" ? row.textLength : 0,
+    candidates: typeof row.candidates === "number" ? row.candidates : 0,
+    needsReview: typeof row.needsReview === "number" ? row.needsReview : 0,
+    durationMs: typeof row.durationMs === "number" ? row.durationMs : 0,
+    errorCode: typeof row.errorCode === "string" ? row.errorCode.slice(0, 80) : null,
+    errorMessage: typeof row.errorMessage === "string" ? row.errorMessage.slice(0, 180) : null,
+  }
+}
+
 function remoteArchive(documents: Record<string, unknown>[], observations: Record<string, unknown>[], analyses: Record<string, unknown>[], audits: Record<string, unknown>[]): ArchiveData {
   return {
     documents: documents.map((row) => ({
@@ -510,10 +599,11 @@ function remoteArchive(documents: Record<string, unknown>[], observations: Recor
       byteSize: Number(row.byte_size),
       sha256: String(row.sha256),
       storagePath: row.storage_path ? String(row.storage_path) : null,
-      processingStatus: row.processing_status === "gagal" ? "gagal" : "selesai",
+      processingStatus: row.processing_status === "membaca" || row.processing_status === "gagal" ? row.processing_status : "selesai",
       extractionStatus: (row.extraction_status as ExtractionStatus) ?? "gagal",
       reviewStatus: row.review_status === "disahkan" ? "disahkan" : "perlu_semakan",
       note: String(row.note ?? ""),
+      diagnostic: diagnosticFrom(row.diagnostic),
     })),
     observations: observations.map((row) => ({
       id: String(row.id),
@@ -566,6 +656,8 @@ export async function saveLabImport(input: {
   text: string
   note: string
   extractionStatus: ExtractionStatus
+  processingStatus?: ProcessingStatus
+  diagnostic?: ExtractionDiagnostic | null
   allowDuplicate: boolean
 }) {
   const uploadedAt = new Date().toISOString()
@@ -593,7 +685,11 @@ async function pushNewDocument(document: LabDocument, observations: LabObservati
       documents: local.documents.map((item) => (item.id === document.id ? { ...item, storagePath: stored } : item)),
     })
   }
-  const inserted = await supabase.from("health_documents").upsert(documentRow(document, stored ? null : bytesToBase64(bytes)))
+  const content = stored ? null : bytesToBase64(bytes)
+  let inserted = await supabase.from("health_documents").upsert(documentRow(document, content))
+  if (inserted.error && inserted.error.message.toLowerCase().includes("diagnostic")) {
+    inserted = await supabase.from("health_documents").upsert(documentRow(document, content, false))
+  }
   if (inserted.error) return missingTable(inserted.error) ? SQL_NOTE : "Fail tempatan disimpan, tetapi salinan awan gagal."
   if (observations.length > 0) {
     const rows = await supabase.from("lab_observations").upsert(observations.map(observationRow))
@@ -607,12 +703,17 @@ export async function savePatientArchive(patientId: string, slice: ArchiveData) 
   store.write(replacePatientRecords(store.read(), patientId, slice))
   const supabase = getSupabase()
   if (!supabase) return "Perubahan disimpan pada pelayar ini. Supabase tidak dikonfigurkan."
-  const documents = await supabase.from("health_documents").upsert(slice.documents.map((item) => documentRow(item)))
+  let documents = await supabase.from("health_documents").upsert(slice.documents.map((item) => documentRow(item)))
+  if (documents.error && documents.error.message.toLowerCase().includes("diagnostic")) {
+    documents = await supabase.from("health_documents").upsert(slice.documents.map((item) => documentRow(item, undefined, false)))
+  }
   if (documents.error) return missingTable(documents.error) ? SQL_NOTE : "Perubahan tempatan disimpan. Salinan awan gagal."
   if (slice.observations.length > 0) {
     const observations = await supabase.from("lab_observations").upsert(slice.observations.map(observationRow))
     if (observations.error) return "Keputusan belum dapat disimpan ke awan."
   }
+  const staleNote = await removeStaleObservations(patientId, slice.observations.map((item) => item.id))
+  if (staleNote) return staleNote
   if (slice.analyses.length > 0) {
     const analyses = await supabase.from("lab_analyses").upsert(slice.analyses.map((item) => ({
       id: item.id,

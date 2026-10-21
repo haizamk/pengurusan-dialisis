@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { applyConfirmation, draftFromText, importLabDocument, memoryArchiveStore, recordsForPatient, withoutDuplicateConfirmed } from "./lab-archive"
+import { applyConfirmation, applyReextraction, draftFromText, importLabDocument, memoryArchiveStore, recordsForPatient, withoutDuplicateConfirmed } from "./lab-archive"
+import { PATIENT_STATUS } from "./pdf-text"
 
 const PNG = Uint8Array.from(Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
@@ -108,6 +109,89 @@ test("pengesahan kekal pada pesakit yang betul dan pendua nilai disekat", () => 
   assert.equal(saved.length, 0)
   assert.equal(skipped.length, 1)
   assert.deepEqual(recordsForPatient([blocked.row, { ...blocked.row, id: "x", patientId: "pesakit-b" }], "pesakit-a").map((item) => item.patientId), ["pesakit-a"])
+})
+
+test("bacaan semula tidak menggandakan keputusan dan tidak memadam fail asal", async () => {
+  const store = memoryArchiveStore()
+  const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 1, 2, 3, 4])
+  const pending = await importLabDocument(store, {
+    patientId: "pesakit-a",
+    fileName: "makmal.pdf",
+    mime: "application/pdf",
+    bytes,
+    text: "",
+    note: PATIENT_STATUS.reading,
+    extractionStatus: "gagal",
+    processingStatus: "membaca",
+    allowDuplicate: false,
+    uploadedAt: "2026-03-12T00:00:00.000Z",
+    id: "dokumen-ulang",
+  })
+  assert.equal(pending.document?.processingStatus, "membaca")
+  assert.equal(pending.document?.note, PATIENT_STATUS.reading)
+  assert.equal(pending.observations.length, 0)
+  const input = {
+    id: "dokumen-ulang",
+    patientId: "pesakit-a",
+    fileName: "makmal.pdf",
+    mime: "application/pdf",
+    byteSize: bytes.length,
+    sha256: pending.document!.sha256,
+    text: "Tarikh: 2026-03-12\nHemoglobin 10.4 g/dL",
+    uploadedAt: "2026-03-12T00:00:00.000Z",
+    note: PATIENT_STATUS.found,
+    extractionStatus: "separa" as const,
+  }
+  const first = applyReextraction(store.read(), "dokumen-ulang", draftFromText(input))
+  const second = applyReextraction(first, "dokumen-ulang", draftFromText(input))
+  const rows = second.observations.filter((item) => item.documentId === "dokumen-ulang")
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0]?.status, "perlu_semakan")
+  assert.equal(rows[0]?.value, 10.4)
+  const confirmed = applyConfirmation(rows[0]!, {
+    value: 10.4,
+    unit: "g/dL",
+    takenOn: "2026-03-12",
+    standardKey: "hemoglobin",
+    originalName: "Hemoglobin",
+    acceptUnclear: true,
+    updatedAt: "2026-03-13T00:00:00.000Z",
+  })
+  assert.equal("error" in confirmed, false)
+  if ("error" in confirmed) return
+  const kept = applyReextraction({ ...second, observations: [confirmed.row] }, "dokumen-ulang", draftFromText(input))
+  const hemoglobin = kept.observations.filter((item) => item.standardKey === "hemoglobin" && item.value === 10.4)
+  assert.equal(hemoglobin.length, 1)
+  assert.equal(hemoglobin[0]?.status, "disahkan")
+  const failed = applyReextraction(kept, "dokumen-ulang", draftFromText({ ...input, text: "", note: PATIENT_STATUS.failed, extractionStatus: "gagal" }))
+  assert.equal(failed.documents[0]?.processingStatus, "gagal")
+  assert.equal(failed.documents[0]?.note, PATIENT_STATUS.failed)
+  assert.equal(failed.observations.filter((item) => item.status === "disahkan" && item.value === 10.4).length, 1)
+  assert.equal((await store.getFile("dokumen-ulang"))?.bytes.length, bytes.length)
+})
+
+test("arkib pesakit bertahan selepas diserialkan dan tidak terbuka kepada pesakit lain", async () => {
+  const store = memoryArchiveStore()
+  const saved = await importLabDocument(store, {
+    patientId: "pesakit-a",
+    fileName: "makmal.pdf",
+    mime: "application/pdf",
+    bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46, 9]),
+    text: "Tarikh: 2026-03-12\nHemoglobin 10.4 g/dL",
+    note: "Teks dibaca.",
+    extractionStatus: "terbaca",
+    allowDuplicate: false,
+    uploadedAt: "2026-03-12T00:00:00.000Z",
+  })
+  const restored = memoryArchiveStore()
+  restored.write(JSON.parse(JSON.stringify(store.read())))
+  const file = await store.getFile(saved.document!.id)
+  await restored.putFile(saved.document!.id, file!)
+  assert.equal(restored.read().observations[0]?.value, 10.4)
+  assert.equal(restored.read().documents[0]?.patientId, "pesakit-a")
+  assert.equal(recordsForPatient(restored.read().documents, "pesakit-b").length, 0)
+  assert.equal(recordsForPatient(restored.read().observations, "pesakit-b").length, 0)
+  assert.equal((await restored.getFile(saved.document!.id))?.bytes[0], 0x25)
 })
 
 test("nilai tidak pasti tidak boleh disahkan tanpa semakan eksplisit", () => {

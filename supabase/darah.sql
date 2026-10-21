@@ -15,8 +15,11 @@ create table if not exists public.health_documents (
   processing_status text not null,
   extraction_status text not null,
   review_status text not null,
-  note text not null default ''
+  note text not null default '',
+  diagnostic jsonb
 );
+
+alter table public.health_documents add column if not exists diagnostic jsonb;
 
 create table if not exists public.lab_observations (
   id text primary key,

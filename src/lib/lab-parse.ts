@@ -55,9 +55,9 @@ const CATALOGUE: CatalogueItem[] = [
 ]
 
 const UNIT_PATTERN =
-  /(\b(?:g\/dl|g\/l|mmol\/l|mg\/dl|µmol\/l|μmol\/l|umol\/l|µg\/l|μg\/l|ug\/l|ng\/ml|pmol\/l|pg\/ml|meq\/l|%)\b)/i
+  /(\b(?:g\s*\/\s*dl|g\s*\/\s*l|mmol\s*\/\s*l|mg\s*\/\s*dl|µmol\s*\/\s*l|μmol\s*\/\s*l|umol\s*\/\s*l|µg\s*\/\s*l|μg\s*\/\s*l|ug\s*\/\s*l|ng\s*\/\s*ml|pmol\s*\/\s*l|pg\s*\/\s*ml|meq\s*\/\s*l|%)\b)/i
 
-const NUMBER_PATTERN = /-?\d+(?:[.,]\d+)?/g
+const NUMBER_PATTERN = /[-+]?\d+(?:[.,]\d+)?(?:[eE][-+]?\d+)?/g
 const RANGE_PATTERN = /(\d+(?:[.,]\d+)?)\s*[-–—]\s*(\d+(?:[.,]\d+)?)/
 
 function normaliseUnit(unit: string) {
@@ -96,7 +96,18 @@ export function normaliseLabUnit(unit: string) {
 }
 
 export function parseLabText(text: string): ParsedReport {
-  const prepared = text.replace(/([A-Za-zµμ%])(?=\d)/g, "$1 ").replace(/(\d)(?=[A-Za-zµμ%])/g, "$1 ")
+  const prepared = text
+    .replace(/([A-Za-zµμ%])(?=\d)/g, (_match: string, letter: string, offset: number, source: string) => {
+      const previous = source[offset - 1] ?? ""
+      if ((letter === "e" || letter === "E") && /\d/.test(previous)) return letter
+      return `${letter} `
+    })
+    .replace(/(\d)(?=[A-Za-zµμ%])/g, (_match: string, digit: string, offset: number, source: string) => {
+      const next = source[offset + digit.length] ?? ""
+      const exponent = source.slice(offset + digit.length + 1, offset + digit.length + 3)
+      if ((next === "e" || next === "E") && /^[+-]?\d/.test(exponent)) return digit
+      return `${digit} `
+    })
   const lines = prepared
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -110,11 +121,13 @@ export function parseLabText(text: string): ParsedReport {
   })
   const uniqueDates = [...new Set(dates)]
   const observations: ParsedObservation[] = []
+  const seen = new Set<string>()
 
   for (const line of lines) {
     const match = findCatalogue(line)
     if (!match || match === "ambiguous") {
       if (match === "ambiguous") {
+        seen.add(line)
         observations.push({
           originalName: line.slice(0, 80),
           standardKey: null,
@@ -128,6 +141,7 @@ export function parseLabText(text: string): ParsedReport {
       }
       continue
     }
+    seen.add(line)
     const range = line.match(RANGE_PATTERN)
     const withoutRange = range ? line.replace(range[0], " ") : line
     const numbers = [...withoutRange.matchAll(NUMBER_PATTERN)].map((item) => parseNumber(item[0])).filter((item): item is number => item != null)
@@ -136,8 +150,9 @@ export function parseLabText(text: string): ParsedReport {
     const withoutUnit = unitMatch ? line.replace(unitMatch[0], " ") : line
     const flagMatch = withoutUnit.match(/(?:^|\s)(H|L|High|Low|Tinggi|Rendah)(?:\s|$)/)
     const flag = flagMatch ? flagMatch[1] : null
-    const unitAllowed = unit != null && match.units.includes(normaliseUnit(unit).replace("µ", "u").replace("μ", "u")) || (unit != null && match.units.some((item) => normaliseUnit(item).replace("µ", "u") === normaliseUnit(unit).replace("µ", "u")))
-    const certain = numbers.length === 1 && unitAllowed
+    const bounded = /(?:<=|>=|<|>|≤|≥)\s*[-+]?\d/.test(withoutRange)
+    const unitAllowed = unit != null && match.units.some((item) => normaliseUnit(item).replaceAll("µ", "u").replaceAll("μ", "u") === normaliseUnit(unit).replaceAll("µ", "u").replaceAll("μ", "u"))
+    const certain = numbers.length === 1 && unitAllowed && !bounded
     observations.push({
       originalName: match.label,
       standardKey: certain ? match.key : null,
@@ -146,6 +161,25 @@ export function parseLabText(text: string): ParsedReport {
       refText: range ? range[0].replace(/\s+/g, " ") : null,
       abnormalFlag: certain ? flag : null,
       uncertain: !certain,
+      snippet: line,
+    })
+  }
+
+  for (const line of lines) {
+    if (seen.has(line) || !UNIT_PATTERN.test(line)) continue
+    const range = line.match(RANGE_PATTERN)
+    const withoutRange = range ? line.replace(range[0], " ") : line
+    const numbers = [...withoutRange.matchAll(NUMBER_PATTERN)].map((item) => parseNumber(item[0])).filter((item): item is number => item != null)
+    const bounded = /(?:<=|>=|<|>|≤|≥)\s*[-+]?\d/.test(withoutRange)
+    const unitMatch = line.match(UNIT_PATTERN)
+    observations.push({
+      originalName: line.slice(0, 80),
+      standardKey: null,
+      value: numbers.length === 1 && !bounded ? numbers[0] : null,
+      unit: unitMatch ? canonicalUnit(unitMatch[1]) : null,
+      refText: range ? range[0].replace(/\s+/g, " ") : null,
+      abnormalFlag: null,
+      uncertain: true,
       snippet: line,
     })
   }
@@ -163,13 +197,18 @@ const JPEG_MAGIC = [0xff, 0xd8, 0xff]
 
 export const MAX_LAB_FILE_BYTES = 8 * 1024 * 1024
 
-export function validateLabFile(file: { name: string; type: string; size: number }, bytes: Uint8Array) {
+export function labFileKind(file: { name: string; type: string }, bytes: Uint8Array) {
   const extension = file.name.split(".").pop()?.toLowerCase() ?? ""
-  const head = Array.from(bytes.slice(0, 4))
+  const head = bytes.subarray(0, 4)
   const starts = (magic: number[]) => magic.every((value, index) => head[index] === value)
-  if (file.size <= 0 || file.size > MAX_LAB_FILE_BYTES) return "Saiz fail mesti antara 1 bait dan 8 MB."
-  if (extension === "pdf" && file.type === "application/pdf" && starts(PDF_MAGIC)) return null
-  if ((extension === "jpg" || extension === "jpeg") && (file.type === "image/jpeg" || file.type === "image/jpg") && starts(JPEG_MAGIC)) return null
-  if (extension === "png" && file.type === "image/png" && starts(PNG_MAGIC)) return null
-  return "Hanya PDF, JPG atau PNG yang sepadan dengan kandungannya diterima."
+  if (starts(PDF_MAGIC) && (extension === "pdf" || file.type === "application/pdf")) return "pdf" as const
+  if (starts(PNG_MAGIC) && (extension === "png" || file.type === "image/png")) return "png" as const
+  if (starts(JPEG_MAGIC) && (extension === "jpg" || extension === "jpeg" || file.type === "image/jpeg" || file.type === "image/jpg")) return "jpeg" as const
+  return null
+}
+
+export function validateLabFile(file: { name: string; type: string; size: number }, bytes: Uint8Array) {
+  if (file.size <= 0 || file.size > MAX_LAB_FILE_BYTES || file.size !== bytes.length) return "Saiz fail mesti antara 1 bait dan 8 MB."
+  if (!labFileKind(file, bytes)) return "Hanya PDF, JPG atau PNG yang sepadan dengan kandungannya diterima."
+  return null
 }
