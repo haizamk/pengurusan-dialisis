@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js"
 import { GoogleGenAI } from "@google/genai"
 import { geminiApiKey } from "@/lib/lab-gemini-server"
+import { selectedGeminiModel } from "@/lib/lab-gemini"
 import { isSupabaseConfigured, supabaseAnonKey, supabaseUrl } from "@/lib/supabase"
 
 export const maxDuration = 60
@@ -93,7 +94,7 @@ Keputusan disahkan: ${JSON.stringify(results)}`
   try {
     const ai = new GoogleGenAI({ apiKey: key })
     const response = await ai.models.generateContent({
-      model: process.env.GEMINI_MODEL?.trim() || "gemini-3.8-flash",
+      model: selectedGeminiModel(),
       contents: [{ text: prompt }],
       config: { responseMimeType: "application/json", responseJsonSchema: schema },
     })
