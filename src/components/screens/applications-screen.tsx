@@ -22,16 +22,6 @@ export function ApplicationsScreen() {
   const [filter, setFilter] = useState<Filter>("menunggu")
   const [query, setQuery] = useState("")
 
-  if (profile?.role !== "super_admin") {
-    return (
-      <PageHeader
-        eyebrow="Kawasan pentadbir"
-        title="Akses terhad"
-        description="Halaman ini hanya boleh digunakan oleh super admin. Pesakit tidak boleh meluluskan akaun."
-      />
-    )
-  }
-
   const counts = {
     menunggu: applications.filter((item) => item.status === "menunggu").length,
     lulus: applications.filter((item) => item.status === "lulus").length,
@@ -44,6 +34,16 @@ export function ApplicationsScreen() {
       .filter((item) => !needle || item.fullName.toLocaleLowerCase("ms").includes(needle) || item.email.toLocaleLowerCase("ms").includes(needle))
       .sort((a, b) => (a.status === "menunggu" ? -1 : 0) - (b.status === "menunggu" ? -1 : 0))
   }, [applications, filter, query])
+
+  if (profile?.role !== "super_admin") {
+    return (
+      <PageHeader
+        eyebrow="Kawasan pentadbir"
+        title="Akses terhad"
+        description="Halaman ini hanya boleh digunakan oleh super admin. Pesakit tidak boleh meluluskan akaun."
+      />
+    )
+  }
 
   return (
     <div className="space-y-6 sm:space-y-8">
