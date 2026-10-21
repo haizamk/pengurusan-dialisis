@@ -209,7 +209,7 @@ const PDF_MAGIC = [0x25, 0x50, 0x44, 0x46]
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47]
 const JPEG_MAGIC = [0xff, 0xd8, 0xff]
 
-export const MAX_LAB_FILE_BYTES = 8 * 1024 * 1024
+export const MAX_LAB_FILE_BYTES = 20 * 1024 * 1024
 
 export function labFileKind(file: { name: string; type: string }, bytes: Uint8Array) {
   const extension = file.name.split(".").pop()?.toLowerCase() ?? ""
@@ -222,7 +222,7 @@ export function labFileKind(file: { name: string; type: string }, bytes: Uint8Ar
 }
 
 export function validateLabFile(file: { name: string; type: string; size: number }, bytes: Uint8Array) {
-  if (file.size <= 0 || file.size > MAX_LAB_FILE_BYTES || file.size !== bytes.length) return "Saiz fail mesti antara 1 bait dan 8 MB."
+  if (file.size <= 0 || file.size > MAX_LAB_FILE_BYTES || file.size !== bytes.length) return "Saiz fail mesti antara 1 bait dan 20 MB."
   if (!labFileKind(file, bytes)) return "Hanya PDF, JPG atau PNG yang sepadan dengan kandungannya diterima."
   return null
 }

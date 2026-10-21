@@ -36,6 +36,7 @@ import { LAB_PARAMETERS, validateLabFile } from "@/lib/lab-parse"
 import { extractReport, PATIENT_STATUS, type ExtractionDiagnostic } from "@/lib/pdf-text"
 import type { ParsedObservation } from "@/lib/lab-parse"
 import { useStore } from "@/lib/store"
+import { getSupabase } from "@/lib/supabase"
 import type { BloodRecord } from "@/lib/types"
 import { formatDate } from "@/lib/format"
 
@@ -58,6 +59,9 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
   const [activeId, setActiveId] = useState<string | null>(null)
   const [duplicateFile, setDuplicateFile] = useState<File | null>(null)
   const [reading, setReading] = useState(false)
+  const [uploadStage, setUploadStage] = useState<"validating" | "archiving" | "extracting" | "saving" | "done" | "error" | null>(null)
+  const [analysisStage, setAnalysisStage] = useState<"session" | "sending" | "analysing" | "saving" | null>(null)
+  const [analysing, setAnalysing] = useState(false)
   const [parameter, setParameter] = useState("all")
   const [range, setRange] = useState<"3m" | "6m" | "12m" | "all">("all")
   const [today, setToday] = useState("")
@@ -111,14 +115,17 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
   async function upload(file: File, allowDuplicate: boolean) {
     if (!patientId || readingRef.current) return
     const typed = file.type ? file : new File([file], file.name, { type: mimeFromName(file.name) })
+    setUploadStage("validating")
     const bytes = new Uint8Array(await typed.arrayBuffer())
     const problem = validateLabFile(typed, bytes)
     if (problem) {
+      setUploadStage("error")
       toast.error(problem)
       return
     }
     readingRef.current = true
     setReading(true)
+    setUploadStage("archiving")
     try {
       const stored = await saveLabImport({
         patientId,
@@ -132,10 +139,12 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
         allowDuplicate,
       })
       if (stored.error) {
+        setUploadStage("error")
         toast.error(stored.error)
         return
       }
       if (stored.duplicate) {
+        setUploadStage("done")
         setDuplicateFile(typed)
         toast.message("Fail yang sama pernah dimuat naik. Gunakan Cuba baca semula pada laporan itu, atau simpan sebagai pembetulan jika anda mahu salinan baharu.")
         return
@@ -148,6 +157,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
       const document = stored.document
       if (!document) return
       setActiveId(document.id)
+      setUploadStage("extracting")
       let text = ""
       let note: string = PATIENT_STATUS.failed
       let diagnostic: ExtractionDiagnostic | null = null
@@ -182,9 +192,18 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
         dateUncertain,
       })
       const current = loaded.data
+      setUploadStage("saving")
       await commit(applyReextraction(current, document.id, draft))
-      if (draft.observations.length > 0) toast.success(PATIENT_STATUS.found)
-      else toast.message(PATIENT_STATUS.failed)
+      if (draft.observations.length > 0) {
+        setUploadStage("done")
+        toast.success(PATIENT_STATUS.found)
+      } else {
+        setUploadStage("error")
+        toast.message(PATIENT_STATUS.failed)
+      }
+    } catch {
+      setUploadStage("error")
+      toast.error("Proses muat naik terhenti. Semak status fail dan cuba baca semula; laporan asal tidak dipadam.")
     } finally {
       readingRef.current = false
       setReading(false)
@@ -320,24 +339,65 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
   }
 
   async function saveAnalysis() {
-    if (!data || !patientId || confirmed.length === 0) return
-    const createdAt = new Date().toISOString()
-    const report = buildLabAnalysis(confirmed, createdAt)
-    await commit({
-      ...data,
-      analyses: [{
+    if (!data || !patientId || confirmed.length === 0 || analysing) return
+    setAnalysing(true)
+    setAnalysisStage("session")
+    try {
+      const supabase = getSupabase()
+      const session = await supabase?.auth.getSession()
+      const token = session?.data.session?.access_token
+      if (!token) {
+        toast.error("Sesi log masuk tamat. Log masuk semula sebelum menjana analisis AI.")
+        return
+      }
+      setAnalysisStage("sending")
+      const response = await fetch("/api/lab-analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          results: confirmed.map((item) => ({
+            key: item.standardKey,
+            label: item.label,
+            date: item.takenOn,
+            value: item.value,
+            unit: item.unit,
+            referenceRange: item.refText,
+          })),
+        }),
+      })
+      setAnalysisStage("analysing")
+      const result = await response.json() as {
+        error?: string
+        version?: string
+        summary?: string
+        safety?: string[]
+        parameters?: Array<{ key: string; label: string; value: number; unit: string; date: string; status: string; interpretation: string; foodTips: string[]; followUp: string }>
+      }
+      if (!response.ok || !result.version || !result.summary || !Array.isArray(result.parameters)) {
+        toast.error(result.error ?? "Analisis AI tidak lengkap. Rekod asal tidak diubah.")
+        return
+      }
+      setAnalysisStage("saving")
+      const createdAt = new Date().toISOString()
+      const stored = {
         id: crypto.randomUUID(),
         patientId,
         documentId: activeId,
         createdAt,
-        version: report.version,
-        summary: report.summary.join("\n"),
-        safety: report.safety,
-        parameterKeys: report.parameters.map((item) => item.key),
-        body: report,
-      }, ...data.analyses],
-    })
-    toast.success("Analisis baharu disimpan. Analisis lama tidak diubah.")
+        version: result.version,
+        summary: result.summary,
+        safety: Array.isArray(result.safety) ? result.safety : [],
+        parameterKeys: result.parameters.map((item) => item.key),
+        body: result,
+      }
+      await commit({ ...data, analyses: [stored, ...data.analyses] })
+      toast.success("Analisis AI bagi semua keputusan berjaya disimpan.")
+    } catch {
+      toast.error("Tidak dapat menjana analisis AI. Rekod asal kekal selamat.")
+    } finally {
+      setAnalysing(false)
+      setAnalysisStage(null)
+    }
   }
 
   async function openDocument(document: LabDocument) {
@@ -380,9 +440,38 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
         <section className="grid gap-4">
           <div>
             <h2 className="font-heading text-2xl">Muat naik laporan</h2>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">PDF, JPG atau PNG sehingga 8 MB. Laporan baharu tidak memadam laporan lama.</p>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">PDF, JPG atau PNG sehingga 20 MB. Laporan baharu tidak memadam laporan lama.</p>
           </div>
-          {reading ? <p className="text-sm leading-6">{PATIENT_STATUS.reading}</p> : <p className="text-sm leading-6 text-muted-foreground">{PATIENT_STATUS.waiting}</p>}
+          {reading ? (
+            <div role="status" aria-live="polite" className="rounded-2xl border border-primary/40 bg-primary/10 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-semibold">{uploadStage === "validating" ? "Langkah 1/4 · Semak fail" : uploadStage === "archiving" ? "Langkah 2/4 · Simpan salinan asal" : uploadStage === "extracting" ? "Langkah 3/4 · Baca laporan" : "Langkah 4/4 · Simpan keputusan"}</p>
+                <span className="text-xs text-muted-foreground">Jangan tutup halaman</span>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+                <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: uploadStage === "validating" ? "12%" : uploadStage === "archiving" ? "32%" : uploadStage === "extracting" ? "68%" : "88%" }} />
+              </div>
+              <ol className="mt-3 grid gap-2 text-sm">
+                {[
+                  ["validating", "Semak jenis dan saiz fail"],
+                  ["archiving", "Simpan fail asal ke arkib pesakit"],
+                  ["extracting", "Ekstrak teks dengan Gemini / PDF / OCR"],
+                  ["saving", "Simpan bacaan untuk semakan manual"],
+                ].map(([stage, label], index) => {
+                  const stages = ["validating", "archiving", "extracting", "saving"]
+                  const current = stages.indexOf(uploadStage ?? "")
+                  const complete = index < current
+                  const activeStep = stage === uploadStage
+                  return <li key={stage} className="flex items-center gap-2"><span className={complete ? "text-primary" : activeStep ? "animate-pulse text-primary" : "text-muted-foreground"}>{complete ? "✓" : activeStep ? "●" : "○"}</span><span className={activeStep ? "font-semibold" : "text-muted-foreground"}>{label}</span></li>
+                })}
+              </ol>
+            </div>
+          ) : uploadStage === "done" ? (
+            <div role="status" className="rounded-xl border border-primary/40 bg-primary/10 p-3 text-sm">✓ Bacaan ditemui dan disimpan. Sila semak setiap nilai sebelum mengesahkan.</div>
+          ) : uploadStage === "error" ? (
+            <div role="status" className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm">Proses belum selesai. Semak mesej pada laporan dan cuba baca semula. Fail asal tidak sepatutnya dianggap sebagai keputusan yang telah disahkan.</div>
+          ) : <p className="text-sm leading-6 text-muted-foreground">{PATIENT_STATUS.waiting}</p>}
+          <p className="text-sm leading-6 text-muted-foreground">PDF, JPG atau PNG · maksimum 20 MB. PDF imbasan akan cuba dibaca menggunakan OCR jika teks tidak tersedia.</p>
           <label className="flex min-h-12 cursor-pointer items-center justify-center rounded-xl bg-primary px-4 py-3 text-center text-sm font-medium text-primary-foreground">
             Pilih laporan makmal
             <input
@@ -488,7 +577,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
         <section className="grid gap-3">
           <h2 className="font-heading text-2xl">Analisis AI</h2>
           <p className="text-sm leading-6 text-muted-foreground">
-            Analisis ini dijana oleh peraturan aplikasi {live.version} daripada rekod yang disahkan. Ia bukan model bahasa, bukan diagnosis, dan tidak menetapkan ubat atau dialisis.
+            Analisis AI dijana daripada keputusan yang telah disahkan. Ia ialah penerangan pendidikan, bukan diagnosis atau arahan mengubah ubat/dialisis. Tip pemakanan perlu disemak bersama pasukan dialisis.
           </p>
           {live.summary.map((item) => <p key={item} className="rounded-2xl bg-card p-4 text-sm leading-6 ring-1 ring-foreground/10">{item}</p>)}
           {live.parameters.map((item) => (
@@ -500,16 +589,47 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
               <p className="mt-2">{item.question}</p>
             </article>
           ))}
-          <Button type="button" className="!h-12 w-fit" disabled={confirmed.length === 0} onClick={() => void saveAnalysis()}>
-            Simpan analisis baharu
+          <Button type="button" className="!h-12 w-fit" disabled={confirmed.length === 0 || analysing} onClick={() => void saveAnalysis()}>
+            {analysing ? "Sedang menjana analisis AI…" : "Jana dan simpan analisis AI"}
           </Button>
-          {(data?.analyses ?? []).map((item) => (
-            <article key={item.id} className="rounded-2xl bg-muted p-4 text-sm leading-6">
-              <p className="font-medium">Disimpan {formatDate(item.createdAt.slice(0, 10))} {item.createdAt.slice(11, 16)} · {item.version}</p>
-              <p className="mt-2 whitespace-pre-wrap">{item.summary}</p>
-              {item.safety.map((warning) => <p key={warning} className="mt-2">{warning}</p>)}
-            </article>
-          ))}
+          {analysing && analysisStage ? (
+            <div role="status" aria-live="polite" className="rounded-2xl border border-primary/40 bg-primary/10 p-4">
+              <div className="flex items-center justify-between gap-3"><p className="font-semibold">Analisis AI sedang berjalan</p><span className="animate-pulse text-xs text-primary">Diproses</span></div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: analysisStage === "session" ? "20%" : analysisStage === "sending" ? "40%" : analysisStage === "analysing" ? "72%" : "90%" }} /></div>
+              <ol className="mt-3 grid gap-2 text-sm">
+                {[
+                  ["session", "Sahkan sesi pesakit"],
+                  ["sending", "Hantar keputusan yang disahkan"],
+                  ["analysing", "Gemini menganalisis setiap parameter"],
+                  ["saving", "Simpan analisis dan tip pemakanan"],
+                ].map(([stage, label], index) => {
+                  const stages = ["session", "sending", "analysing", "saving"]
+                  const current = stages.indexOf(analysisStage)
+                  return <li key={stage} className="flex items-center gap-2"><span className={index < current ? "text-primary" : stage === analysisStage ? "animate-pulse text-primary" : "text-muted-foreground"}>{index < current ? "✓" : stage === analysisStage ? "●" : "○"}</span><span className={stage === analysisStage ? "font-semibold" : "text-muted-foreground"}>{label}</span></li>
+                })}
+              </ol>
+            </div>
+          ) : null}
+          {(data?.analyses ?? []).map((item) => {
+            const body = item.body as { parameters?: Array<{ key?: string; label?: string; value?: number; unit?: string; date?: string; status?: string; interpretation?: string; foodTips?: string[]; followUp?: string }> }
+            const aiParameters = item.version.startsWith("gemini-") ? body.parameters ?? [] : []
+            return (
+              <article key={item.id} className="rounded-2xl bg-muted p-4 text-sm leading-6">
+                <p className="font-medium">Disimpan {formatDate(item.createdAt.slice(0, 10))} {item.createdAt.slice(11, 16)} · {item.version}</p>
+                <p className="mt-2 whitespace-pre-wrap">{item.summary}</p>
+                {aiParameters.map((parameter, index) => (
+                  <div key={`${parameter.key ?? "parameter"}-${parameter.date ?? index}-${index}`} className="mt-3 rounded-xl border border-border bg-card p-3">
+                    <p className="font-semibold">{parameter.label}: {parameter.value} {parameter.unit} · {parameter.date}</p>
+                    <p className="mt-1">Status: {parameter.status?.replaceAll("_", " ")}</p>
+                    <p className="mt-1">{parameter.interpretation}</p>
+                    {parameter.foodTips?.map((tip, tipIndex) => <p key={tipIndex} className="mt-1">• {tip}</p>)}
+                    {parameter.followUp ? <p className="mt-1 text-muted-foreground">Perbincangan: {parameter.followUp}</p> : null}
+                  </div>
+                ))}
+                {item.safety.map((warning) => <p key={warning} className="mt-2 font-medium">{warning}</p>)}
+              </article>
+            )
+          })}
           <p className="text-sm leading-6 text-muted-foreground">{live.disclaimer}</p>
         </section>
       ) : null}

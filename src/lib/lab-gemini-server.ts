@@ -1,10 +1,9 @@
-import { GoogleGenAI, MediaResolution } from "@google/genai"
+import { GoogleGenAI, MediaResolution, createPartFromUri } from "@google/genai"
 import { labFileKind, validateLabFile } from "@/lib/lab-parse"
 import {
   DEFAULT_GEMINI_MODEL,
   GEMINI_EXTRACT_PROMPT,
   GEMINI_RESPONSE_SCHEMA,
-  MAX_GEMINI_FILE_BYTES,
   geminiMime,
   observationsFromGemini,
   selectedGeminiModel,
@@ -43,9 +42,6 @@ export async function extractWithGemini(
   if (problem) return { ok: false, errorCode: "fail-tidak-sah", errorMessage: problem }
   const kind = labFileKind(file, bytes)
   if (!kind) return { ok: false, errorCode: "fail-tidak-sah", errorMessage: "Kandungan fail tidak sepadan dengan PDF, JPG atau PNG." }
-  if (bytes.length > MAX_GEMINI_FILE_BYTES) {
-    return { ok: false, errorCode: "gemini-terlalu-besar", errorMessage: "Fail melebihi 4 MB untuk bacaan Gemini. OCR tempatan akan dicuba." }
-  }
   const key = geminiApiKey()
   if (!key && !generate) {
     return { ok: false, errorCode: "gemini-tidak-tersedia", errorMessage: "Kunci GEMINI_API_KEY belum ditetapkan pada pelayan." }
@@ -58,7 +54,9 @@ export async function extractWithGemini(
     try {
       const text = generate
         ? await generate({ model, mime, data })
-        : await requestGemini({ model, mime, data, key })
+        : bytes.length <= 4 * 1024 * 1024
+          ? await requestGemini({ model, mime, data, key })
+          : await requestGeminiFileApi({ model, mime, bytes, name: file.name, key })
       let parsed: unknown
       try {
         parsed = JSON.parse(text)
@@ -113,3 +111,46 @@ async function requestGemini(input: { model: string; mime: string; data: string;
 }
 
 export { DEFAULT_GEMINI_MODEL }
+
+
+async function requestGeminiFileApi(input: { model: string; mime: string; bytes: Uint8Array; name: string; key: string }) {
+  const ai = new GoogleGenAI({ apiKey: input.key })
+  let uploaded: Awaited<ReturnType<typeof ai.files.upload>> | null = null
+  try {
+    const blob = new Blob([new Uint8Array(input.bytes)], { type: input.mime })
+    uploaded = await ai.files.upload({
+      file: blob,
+      config: { mimeType: input.mime, displayName: input.name.slice(0, 120) },
+    })
+    if (!uploaded.name || !uploaded.uri || !uploaded.mimeType) {
+      throw new Error("Gemini File API tidak memulangkan maklumat fail yang lengkap.")
+    }
+    let current = uploaded
+    const deadline = Date.now() + 25000
+    while (current.state === "PROCESSING" && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+      current = await ai.files.get({ name: uploaded.name })
+    }
+    if (current.state === "FAILED") throw new Error("Gemini gagal memproses fail laporan.")
+    if (current.state === "PROCESSING") throw new Error("Pemprosesan fail Gemini mengambil masa terlalu lama. Cuba semula.")
+    const response = await ai.models.generateContent({
+      model: input.model,
+      contents: [
+        createPartFromUri(uploaded.uri, uploaded.mimeType),
+        { text: GEMINI_EXTRACT_PROMPT },
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseJsonSchema: GEMINI_RESPONSE_SCHEMA,
+        mediaResolution: input.mime === "application/pdf" ? MediaResolution.MEDIA_RESOLUTION_MEDIUM : MediaResolution.MEDIA_RESOLUTION_HIGH,
+      },
+    })
+    const text = response.text?.trim() ?? ""
+    if (!text) throw new Error("Gemini memulangkan balasan kosong.")
+    return text
+  } finally {
+    if (uploaded?.name) {
+      try { await ai.files.delete({ name: uploaded.name }) } catch { /* best-effort cleanup of temporary Gemini upload */ }
+    }
+  }
+}

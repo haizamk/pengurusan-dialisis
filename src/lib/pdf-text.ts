@@ -221,7 +221,13 @@ export async function extractReport(
   const requestGemini = options?.gemini === undefined ? requestLabExtract : options.gemini
   if (requestGemini) {
     diagnostic.stage = "teks"
-    const gemini = await requestGemini(bytes, file)
+    let gemini: Awaited<ReturnType<typeof requestLabExtract>> = null
+    try {
+      gemini = await requestGemini(bytes, file)
+    } catch (error) {
+      diagnostic.errorCode = "gemini-gagal"
+      diagnostic.errorMessage = sanitiseError(error)
+    }
     if (gemini?.ok) {
       const text = textFromGeminiReport(gemini.extract)
       diagnostic.method = "gemini"

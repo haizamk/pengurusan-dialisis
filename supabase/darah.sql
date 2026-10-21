@@ -107,8 +107,8 @@ create policy "analisis sendiri tambah" on public.lab_analyses
   with check (patient_id = public.my_patient_id());
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('lab-reports', 'lab-reports', false, 8388608, array['application/pdf', 'image/jpeg', 'image/png'])
-on conflict (id) do update set public = false;
+values ('lab-reports', 'lab-reports', false, 20971520, array['application/pdf', 'image/jpeg', 'image/png'])
+on conflict (id) do update set public = false, file_size_limit = 20971520, allowed_mime_types = array['application/pdf', 'image/jpeg', 'image/png'];
 
 drop policy if exists "laporan baca sendiri" on storage.objects;
 create policy "laporan baca sendiri" on storage.objects
