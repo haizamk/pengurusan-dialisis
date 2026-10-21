@@ -13,6 +13,7 @@ import {
   NotebookPen,
   MoreHorizontal,
   Sparkles,
+  ShieldCheck,
   Users,
   Utensils,
 } from "lucide-react"
@@ -278,9 +279,15 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <div className="min-w-0 md:pl-72">
         <header className="sticky top-0 z-20 border-b border-border/70 bg-background/85 backdrop-blur-xl">
           <div className="flex flex-col gap-3 px-4 py-3.5 sm:px-5 md:flex-row md:items-center md:justify-between md:px-8">
-            <div className="md:hidden">
-              <p className="font-heading text-lg font-semibold leading-tight tracking-tight">Pengurusan Pesakit Dialisis</p>
-              <p className="mt-1 text-xs text-muted-foreground">{profile?.role === "super_admin" ? "Portal master admin" : profile?.role === "pesakit" ? "Portal pesakit" : "Ringkasan operasi"}</p>
+            <div className="flex items-center gap-3 md:hidden">
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-300 to-cyan-500 text-slate-950 shadow-md shadow-teal-950/20" aria-hidden="true">
+                <ShieldCheck className="size-6" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary">PPD · Portal</p>
+                <p className="mt-0.5 font-heading text-base font-semibold leading-tight tracking-tight">Pengurusan Dialisis</p>
+                <p className="mt-1 text-xs text-muted-foreground">{profile?.role === "super_admin" ? "Portal master admin" : profile?.role === "pesakit" ? "Ruang kesihatan peribadi" : "Ringkasan operasi"}</p>
+              </div>
             </div>
             <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
               {source === "local" ? (
