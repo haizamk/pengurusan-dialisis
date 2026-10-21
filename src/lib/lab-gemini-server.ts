@@ -106,7 +106,7 @@ export async function extractWithGemini(
     try {
       const text = mistralText.trim()
         ? await requestNousText({ text: mistralText, key: nousKey })
-        : await NousDocument({ bytes, mime, key: nousKey })
+        : await requestNousText({ text: await requestMistralOcr({ bytes, mime, key: process.env.MISTRAL_API_KEY?.trim() || "" }), key: nousKey })
       const result = validateAndMap(text)
       if (result) return { ok: true, payload: result.payload, extract: { ...result.report, model: mistralText.trim() ? "mistral-ocr-latest + nous" : "nous", rejected: result.rejected } }
       throw new Error("Nous tidak memulangkan keputusan makmal yang sah.")
