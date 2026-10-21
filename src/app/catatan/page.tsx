@@ -44,7 +44,12 @@ export default function Page() {
   const [kind, setKind] = useState<Kind>("gejala")
   const [recordedOn, setRecordedOn] = useState("")
   const [body, setBody] = useState("")
-  const [entries, setEntries] = useState<Entry[]>([])\n\n  useEffect(() => {\n    setEntries(patient ? readEntries(patient.id) : [])\n  }, [patient?.id])
+  const [entries, setEntries] = useState<Entry[]>([])
+
+  const patientId = patient?.id
+  useEffect(() => {
+    setEntries(patientId ? readEntries(patientId) : [])
+  }, [patientId])
 
   if (profile?.role === "super_admin") {
     return (
