@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   Leaf,
   NotebookPen,
+  MoreHorizontal,
   Sparkles,
   Users,
   Utensils,
