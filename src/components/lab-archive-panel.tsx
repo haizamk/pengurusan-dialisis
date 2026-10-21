@@ -34,6 +34,7 @@ import {
 } from "@/lib/lab-archive"
 import { LAB_PARAMETERS, validateLabFile } from "@/lib/lab-parse"
 import { extractReport, PATIENT_STATUS, type ExtractionDiagnostic } from "@/lib/pdf-text"
+import type { ParsedObservation } from "@/lib/lab-parse"
 import { useStore } from "@/lib/store"
 import type { BloodRecord } from "@/lib/types"
 import { formatDate } from "@/lib/format"
@@ -150,11 +151,17 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
       let text = ""
       let note: string = PATIENT_STATUS.failed
       let diagnostic: ExtractionDiagnostic | null = null
+      let observations: ParsedObservation[] | undefined
+      let reportDate: string | null | undefined
+      let dateUncertain: boolean | undefined
       try {
         const outcome = await extractReport(bytes, typed)
         text = outcome.text
         note = outcome.patientStatus
         diagnostic = outcome.diagnostic
+        observations = outcome.observations.length > 0 ? outcome.observations : undefined
+        reportDate = outcome.reportDate
+        dateUncertain = outcome.dateUncertain
       } catch {
         note = PATIENT_STATUS.failed
       }
@@ -168,8 +175,11 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
         text,
         uploadedAt: document.uploadedAt,
         note,
-        extractionStatus: text ? "separa" : "gagal",
+        extractionStatus: text || (observations?.length ?? 0) > 0 ? "separa" : "gagal",
         diagnostic,
+        observations,
+        reportDate,
+        dateUncertain,
       })
       const current = loaded.data
       await commit(applyReextraction(current, document.id, draft))
@@ -203,8 +213,11 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
         text: outcome.text,
         uploadedAt: document.uploadedAt,
         note: outcome.patientStatus,
-        extractionStatus: outcome.text ? "separa" : "gagal",
+        extractionStatus: outcome.text || outcome.observations.length > 0 ? "separa" : "gagal",
         diagnostic: outcome.diagnostic,
+        observations: outcome.observations.length > 0 ? outcome.observations : undefined,
+        reportDate: outcome.reportDate,
+        dateUncertain: outcome.dateUncertain,
       })
       await commit(applyReextraction(data, document.id, draft))
       if (draft.observations.length > 0) toast.success(PATIENT_STATUS.found)
@@ -638,7 +651,7 @@ function DiagnosticDetails({ diagnostic }: { diagnostic: ExtractionDiagnostic | 
     <details className="mt-2">
       <summary className="min-h-12 cursor-pointer text-sm">Butiran teknikal</summary>
       <dl className="grid gap-1 text-sm leading-6 text-muted-foreground">
-        <div>Kaedah: {diagnostic.method}. Peringkat: {diagnostic.stage}.</div>
+        <div>Kaedah: {diagnostic.method}. Model: {diagnostic.provider ?? "tiada"}. Peringkat: {diagnostic.stage}.</div>
         <div>Halaman: {diagnostic.pageCount ?? "tiada"}. Dibaca: {diagnostic.pagesRead}. Gagal: {diagnostic.pagesFailed}. Teks pilihan: {diagnostic.selectableText ? "ya" : "tidak"}.</div>
         <div>Panjang teks: {diagnostic.textLength}. Calon: {diagnostic.candidates}. Perlu semakan: {diagnostic.needsReview}. Masa: {diagnostic.durationMs} ms.</div>
         <div>Ralat: {diagnostic.errorCode ?? "tiada"}{diagnostic.errorMessage ? ` — ${diagnostic.errorMessage}` : ""}.</div>

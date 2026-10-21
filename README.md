@@ -42,7 +42,8 @@ npm run lint
 6. Buka laman, tekan **Daftar super admin**, dan cipta emel serta kata laluan. Butang **Jana** membuat kata laluan. Akaun ini hanya boleh dicipta sekali.
 7. Pesakit tekan **Daftar permohonan pesakit** dan memilih kata laluan sendiri. Super admin meluluskan di halaman **Permohonan**. Selepas itu pesakit log masuk dan mengisi sesi serta rekod darah sendiri.
 8. Jalankan `supabase/portal.sql` sekali. Ia menambah medan sesi dan menutup bacaan rekod kesihatan oleh super admin. Rekod sedia ada tidak dipadam.
-9. Jalankan `supabase/darah.sql` sekali untuk laporan makmal. Jika jadual itu sudah wujud, jalankan fail yang sama sekali lagi: ia menambah lajur `diagnostic` tanpa memadam rekod. Ia juga menambah jadual dokumen, keputusan, audit, dan analisis, serta bucket peribadi `lab-reports`. Tiada kunci OCR atau model bahasa. PDF berteks dibaca di pelayar. Halaman imbasan serta JPG dan PNG dibaca dengan Tesseract (`eng`) yang disalin semasa `npm run dev` atau `npm run build`. Jika model atau pekerja OCR tidak tersedia, laporan asal kekal dan pesakit diminta memasukkan keputusan secara manual. Butiran teknikal dibuka dengan `?diagnostik=1` pada URL, bukan pada paparan pesakit biasa.
+9. Jalankan `supabase/darah.sql` sekali untuk laporan makmal. Jika jadual itu sudah wujud, jalankan fail yang sama sekali lagi: ia menambah lajur `diagnostic` tanpa memadam rekod. Ia juga menambah jadual dokumen, keputusan, audit, dan analisis, serta bucket peribadi `lab-reports`.
+10. Untuk bacaan Gemini, tetapkan `GEMINI_API_KEY` pada pelayan sahaja (`.env.local` atau pembolehubah Netlify). Jangan guna awalan `NEXT_PUBLIC_`. Model lalai ialah `gemini-3.8-flash`, yang menyokong PDF, imej, dan JSON berstruktur. PDF berteks dan imbasan masih boleh dibaca dengan PDF.js serta Tesseract (`eng`) jika Gemini belum dikunci atau gagal. Butiran teknikal dibuka dengan `?diagnostik=1`.
 
 Pesakit yang diluluskan hanya membaca dan menulis rekod sendiri. Super admin melihat semua rekod dan permohonan. Kunci publishable tanpa sesi tidak boleh membaca rekod klinikal.
 
@@ -50,7 +51,7 @@ Pesakit yang diluluskan hanya membaca dan menulis rekod sendiri. Super admin mel
 
 1. Tolak repositori ini ke hos Git yang Netlify boleh baca.
 2. Cipta laman baharu daripada repositori. Arahan binaan dan pemalam dibaca dari `netlify.toml`.
-3. Tambah dua pembolehubah persekitaran yang sama seperti `.env.local`.
+3. Tambah `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, dan `GEMINI_API_KEY` (tanpa awalan `NEXT_PUBLIC_`).
 4. Terbitkan laman.
 
 Next.js pada Netlify memerlukan Node 22, sudah ditetapkan dalam `netlify.toml`.

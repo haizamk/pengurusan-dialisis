@@ -1,4 +1,6 @@
-import { labFileKind } from "@/lib/lab-parse"
+import { requestLabExtract } from "@/lib/lab-gemini-client"
+import { textFromGeminiReport } from "@/lib/lab-gemini"
+import { labFileKind, type ParsedObservation } from "@/lib/lab-parse"
 
 export const PATIENT_STATUS = {
   waiting: "Menunggu pemprosesan.",
@@ -7,7 +9,7 @@ export const PATIENT_STATUS = {
   failed: "Ekstraksi tidak berjaya — sila cuba kaedah lain atau masukkan keputusan secara manual.",
 } as const
 
-export type ExtractionMethod = "pdf-teks" | "ocr" | "pdf-teks+ocr" | "tiada"
+export type ExtractionMethod = "gemini" | "pdf-teks" | "ocr" | "pdf-teks+ocr" | "tiada"
 
 export type ExtractionDiagnostic = {
   documentId: string | null
@@ -24,11 +26,15 @@ export type ExtractionDiagnostic = {
   durationMs: number
   errorCode: string | null
   errorMessage: string | null
+  provider: string | null
 }
 
 export type ExtractionOutcome = {
   text: string
   patientStatus: string
+  observations: ParsedObservation[]
+  reportDate: string | null
+  dateUncertain: boolean
   diagnostic: ExtractionDiagnostic
 }
 
@@ -105,6 +111,7 @@ function blankDiagnostic(attemptId: string): ExtractionDiagnostic {
     durationMs: 0,
     errorCode: null,
     errorMessage: null,
+    provider: null,
   }
 }
 
@@ -194,17 +201,52 @@ function pdfOptions() {
   }
 }
 
-export async function extractReport(bytes: Uint8Array, file: { name: string; type: string }): Promise<ExtractionOutcome> {
+export async function extractReport(
+  bytes: Uint8Array,
+  file: { name: string; type: string },
+  options?: { gemini?: typeof requestLabExtract | null },
+): Promise<ExtractionOutcome> {
   const started = Date.now()
   const attemptId = crypto.randomUUID()
   const diagnostic = blankDiagnostic(attemptId)
+  const empty = { observations: [] as ParsedObservation[], reportDate: null as string | null, dateUncertain: true }
   const kind = labFileKind(file, bytes)
   if (!kind) {
     diagnostic.stage = "gagal"
     diagnostic.errorCode = "fail-tidak-sah"
     diagnostic.errorMessage = "Kandungan fail tidak sepadan dengan PDF, JPG atau PNG."
     diagnostic.durationMs = Date.now() - started
-    return { text: "", patientStatus: PATIENT_STATUS.failed, diagnostic }
+    return { text: "", patientStatus: PATIENT_STATUS.failed, diagnostic, ...empty }
+  }
+  const requestGemini = options?.gemini === undefined ? requestLabExtract : options.gemini
+  if (requestGemini) {
+    diagnostic.stage = "teks"
+    const gemini = await requestGemini(bytes, file)
+    if (gemini?.ok) {
+      const text = textFromGeminiReport(gemini.extract)
+      diagnostic.method = "gemini"
+      diagnostic.provider = gemini.extract.model
+      diagnostic.selectableText = false
+      diagnostic.pageCount = kind === "pdf" ? null : 1
+      diagnostic.pagesRead = 1
+      diagnostic.textLength = text.length
+      diagnostic.candidates = gemini.extract.observations.length
+      diagnostic.needsReview = gemini.extract.observations.filter((item) => item.uncertain).length
+      diagnostic.stage = "parse"
+      diagnostic.durationMs = Date.now() - started
+      return {
+        text,
+        patientStatus: PATIENT_STATUS.found,
+        observations: gemini.extract.observations,
+        reportDate: gemini.extract.reportDate,
+        dateUncertain: gemini.extract.dateUncertain,
+        diagnostic,
+      }
+    }
+    if (gemini && gemini.errorCode !== "gemini-tidak-tersedia") {
+      diagnostic.errorCode = gemini.errorCode
+      diagnostic.errorMessage = gemini.errorMessage
+    }
   }
 
   const sections: string[] = []
@@ -307,6 +349,9 @@ export async function extractReport(bytes: Uint8Array, file: { name: string; typ
   return {
     text: readable ? text : "",
     patientStatus: readable ? PATIENT_STATUS.found : PATIENT_STATUS.failed,
+    observations: [],
+    reportDate: null,
+    dateUncertain: true,
     diagnostic,
   }
 }

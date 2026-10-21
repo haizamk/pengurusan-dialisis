@@ -95,6 +95,20 @@ export function normaliseLabUnit(unit: string) {
   return canonicalUnit(unit.trim())
 }
 
+export function catalogueForName(name: string) {
+  const match = findCatalogue(name)
+  return match && match !== "ambiguous" ? match : null
+}
+
+export function parseLabNumber(token: string) {
+  return parseNumber(token)
+}
+
+export function unitAppearsInText(text: string, unit: string) {
+  const compact = (value: string) => normaliseUnit(value).replaceAll("µ", "u").replaceAll("μ", "u")
+  return compact(text).includes(compact(unit))
+}
+
 export function parseLabText(text: string): ParsedReport {
   const prepared = text
     .replace(/([A-Za-zµμ%])(?=\d)/g, (_match: string, letter: string, offset: number, source: string) => {

@@ -1,4 +1,4 @@
-import { normaliseLabUnit, parseLabText, validateLabFile, type ExtractionStatus } from "@/lib/lab-parse"
+import { normaliseLabUnit, parseLabText, validateLabFile, type ExtractionStatus, type ParsedObservation } from "@/lib/lab-parse"
 import { PATIENT_STATUS, type ExtractionDiagnostic } from "@/lib/pdf-text"
 import { getSupabase } from "@/lib/supabase"
 
@@ -132,8 +132,13 @@ export function draftFromText(input: {
   extractionStatus: ExtractionStatus
   processingStatus?: ProcessingStatus
   diagnostic?: ExtractionDiagnostic | null
+  observations?: ParsedObservation[]
+  reportDate?: string | null
+  dateUncertain?: boolean
 }) {
-  const parsed = input.text.trim() ? parseLabText(input.text) : null
+  const parsed = input.observations
+    ? { reportDate: input.reportDate ?? null, dateUncertain: input.dateUncertain ?? !input.reportDate, observations: input.observations }
+    : input.text.trim() ? parseLabText(input.text) : null
   const parsedRows = parsed?.observations ?? []
   let extractionStatus = input.extractionStatus
   let note = input.note
@@ -567,7 +572,7 @@ function diagnosticFrom(value: unknown): ExtractionDiagnostic | null {
   const stage = row.stage
   const method = row.method
   const stages = new Set(["validasi", "teks", "ocr", "parse", "selesai", "gagal"])
-  const methods = new Set(["pdf-teks", "ocr", "pdf-teks+ocr", "tiada"])
+  const methods = new Set(["gemini", "pdf-teks", "ocr", "pdf-teks+ocr", "tiada"])
   if (typeof row.attemptId !== "string" || !stage || !stages.has(stage) || !method || !methods.has(method)) return null
   return {
     documentId: typeof row.documentId === "string" ? row.documentId : null,
@@ -584,6 +589,7 @@ function diagnosticFrom(value: unknown): ExtractionDiagnostic | null {
     durationMs: typeof row.durationMs === "number" ? row.durationMs : 0,
     errorCode: typeof row.errorCode === "string" ? row.errorCode.slice(0, 80) : null,
     errorMessage: typeof row.errorMessage === "string" ? row.errorMessage.slice(0, 180) : null,
+    provider: typeof row.provider === "string" ? row.provider.slice(0, 80) : null,
   }
 }
 
