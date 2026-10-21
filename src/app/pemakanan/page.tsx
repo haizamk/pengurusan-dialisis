@@ -3,8 +3,14 @@
 import { Apple, Info } from "lucide-react"
 import { LabArchivePanel } from "@/components/lab-archive-panel"
 import { PageHeader } from "@/components/page-header"
+import { useStore } from "@/lib/store"
 
 export default function Page() {
+  const { profile } = useStore()
+  if (profile?.role === "super_admin") {
+    return <PageHeader eyebrow="Kawalan akses" title="Pemakanan pesakit" description="Analisis pemakanan berdasarkan rekod kesihatan tidak dipaparkan dalam portal Master Admin." />
+  }
+
   return (
     <div className="space-y-6 sm:space-y-8">
       <PageHeader
