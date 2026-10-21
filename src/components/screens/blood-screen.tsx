@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
+import { LabArchivePanel } from "@/components/lab-archive-panel"
 import { LabEditor } from "@/components/lab-editor"
 import { LabTrends } from "@/components/lab-trends"
 import { LoadingBlock, PageHeader } from "@/components/page-header"
@@ -38,8 +39,9 @@ export function BloodScreen() {
       <PageHeader
         eyebrow="Darah"
         title="Rekod darah anda"
-        description="Nilai di bawah ialah rekod yang disimpan. Julat dalam aplikasi ialah panduan am, bukan julat makmal laporan anda. Muat naik fail tidak meneka nombor yang tidak dapat dibaca."
+        description="Muat naik laporan, semak nilai, kemudian sahkan. Hanya keputusan yang disahkan masuk ke graf dan analisis. Rekod manual yang lama kekal."
       />
+      <LabArchivePanel />
       <LabEditor
         key={`${presetPatientId ?? ""}-${editingId ?? presetLabId ?? "baru"}`}
         presetPatientId={presetPatientId}

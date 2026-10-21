@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation"
 import { Suspense, useState } from "react"
 import {
   Activity,
+  ChartColumn,
   ClipboardCheck,
   Droplets,
   LayoutDashboard,
@@ -12,6 +13,7 @@ import {
   NotebookPen,
   Sparkles,
   Users,
+  Utensils,
 } from "lucide-react"
 import { toast } from "sonner"
 import { AccountGate, LoginScreen, PendingScreen, RejectedScreen } from "@/components/auth-screens"
@@ -41,8 +43,11 @@ const PATIENT_NAV = [
   { href: "/", label: "Papan", icon: LayoutDashboard },
   { href: "/dialisis", label: "Dialisis", icon: Activity },
   { href: "/darah", label: "Darah", icon: Droplets },
+  { href: "/graf", label: "Graf", icon: ChartColumn },
   { href: "/analisis", label: "Analisis", icon: Sparkles },
+  { href: "/pemakanan", label: "Diet", icon: Utensils },
   { href: "/catatan", label: "Catatan", icon: NotebookPen },
+  { href: "/profil", label: "Profil", icon: Users },
   { href: "/tip", label: "Tip", icon: Leaf },
 ]
 
@@ -59,6 +64,18 @@ function useNavItems() {
 function useActive() {
   const pathname = usePathname()
   return (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href))
+}
+
+function navLabel(label: string, role?: string) {
+  if (label === "Papan") return "Papan pemuka"
+  if (label === "Darah") return "Rekod darah"
+  if (label === "Tip") return "Makanan & tapak"
+  if (label === "Dialisis") return "Sesi dialisis"
+  if (label === "Graf") return "Graf kesihatan"
+  if (label === "Diet") return "Cadangan pemakanan"
+  if (label === "Profil") return "Profil saya"
+  if (label === "Pesakit" && role === "pesakit") return "Rekod saya"
+  return label
 }
 
 function SideNav() {
@@ -82,21 +99,7 @@ function SideNav() {
             )}
           >
             <Icon className="size-4" />
-            {item.label === "Papan"
-              ? "Papan pemuka"
-              : item.label === "Darah"
-                ? "Rekod darah"
-                : item.label === "Tip"
-                  ? "Makanan & tapak"
-                  : item.label === "Dialisis"
-                    ? "Sesi dialisis"
-                    : item.label.startsWith("Permohonan")
-                      ? item.label
-                      : item.label === "Analisis" || item.label === "Catatan"
-                        ? item.label
-                        : profile?.role === "pesakit"
-                          ? "Rekod saya"
-                          : "Pesakit"}
+            {navLabel(item.label, profile?.role)}
           </Link>
         )
       })}
@@ -109,7 +112,7 @@ function MobileNav() {
   const { profile } = useStore()
   const items = useNavItems()
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-3 border-t border-border bg-card/95 backdrop-blur sm:grid-cols-6 md:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-border bg-card/95 backdrop-blur md:hidden">
       {items.map((item) => {
         const Icon = item.icon
         return (
@@ -118,7 +121,7 @@ function MobileNav() {
             href={item.href}
             aria-current={active(item.href) ? "page" : undefined}
             className={cn(
-              "flex flex-col items-center gap-1 px-1 py-2 text-[0.68rem]",
+              "flex min-h-12 flex-col items-center justify-center gap-1 px-1 py-2 text-[0.68rem]",
               active(item.href) ? "text-primary" : "text-muted-foreground",
             )}
           >
@@ -277,7 +280,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </p>
           ) : null}
         </header>
-        <main className="px-4 py-6 pb-28 md:px-8 md:pb-12">{children}</main>
+        <main className="px-4 py-6 pb-44 md:px-8 md:pb-12">{children}</main>
       </div>
 
       <Suspense fallback={null}>

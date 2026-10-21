@@ -1,0 +1,139 @@
+import assert from "node:assert/strict"
+import test from "node:test"
+import { applyConfirmation, draftFromText, importLabDocument, memoryArchiveStore, recordsForPatient, withoutDuplicateConfirmed } from "./lab-archive"
+
+const PNG = Uint8Array.from(Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+))
+
+test("imej disimpan tanpa nilai yang diteka", async () => {
+  const store = memoryArchiveStore()
+  const first = await importLabDocument(store, {
+    patientId: "pesakit-a",
+    fileName: "makmal.png",
+    mime: "image/png",
+    bytes: PNG,
+    text: "",
+    note: "Imej disimpan.",
+    extractionStatus: "tiada_teks",
+    allowDuplicate: false,
+    uploadedAt: "2026-03-12T00:00:00.000Z",
+  })
+  assert.equal(first.error, null)
+  assert.equal(first.observations.length, 0)
+  assert.equal(first.document?.reviewStatus, "perlu_semakan")
+  const saved = await store.getFile(first.document!.id)
+  assert.equal(saved?.bytes.length, PNG.length)
+  assert.equal(saved?.bytes[0], 0x89)
+})
+
+test("pdf teks menjadi draf semakan dan tidak terus disahkan", () => {
+  const draft = draftFromText({
+    id: "dokumen-1",
+    patientId: "pesakit-a",
+    fileName: "makmal.pdf",
+    mime: "application/pdf",
+    byteSize: 20,
+    sha256: "abc",
+    text: "Tarikh: 2026-03-12\nHemoglobin 10.4 g/dL",
+    uploadedAt: "2026-03-12T00:00:00.000Z",
+    note: "Teks dibaca.",
+    extractionStatus: "terbaca",
+  })
+  assert.equal(draft.observations[0]?.status, "perlu_semakan")
+  assert.equal(draft.observations[0]?.value, 10.4)
+  assert.equal(draft.observations[0]?.unit, "g/dl")
+  assert.equal(draft.document.patientId, "pesakit-a")
+})
+
+test("laporan baharu tidak memadam laporan lama dan pendua disekat", async () => {
+  const store = memoryArchiveStore()
+  const input = {
+    patientId: "pesakit-a",
+    fileName: "makmal.png",
+    mime: "image/png",
+    bytes: PNG,
+    text: "",
+    note: "Imej.",
+    extractionStatus: "tiada_teks" as const,
+    allowDuplicate: false,
+    uploadedAt: "2026-03-12T00:00:00.000Z",
+  }
+  const first = await importLabDocument(store, input)
+  const second = await importLabDocument(store, { ...input, fileName: "salinan.png" })
+  assert.equal(second.duplicate?.id, first.document?.id)
+  assert.equal(store.read().documents.length, 1)
+  const other = await importLabDocument(store, {
+    ...input,
+    fileName: "lain.png",
+    bytes: Uint8Array.from([...PNG, 1]),
+    uploadedAt: "2026-04-01T00:00:00.000Z",
+  })
+  assert.equal(other.document?.id === first.document?.id, false)
+  assert.equal(store.read().documents.length, 2)
+  const original = await store.getFile(first.document!.id)
+  assert.equal(original?.bytes.length, PNG.length)
+})
+
+test("pengesahan kekal pada pesakit yang betul dan pendua nilai disekat", () => {
+  const draft = draftFromText({
+    id: "dokumen-1",
+    patientId: "pesakit-a",
+    fileName: "makmal.pdf",
+    mime: "application/pdf",
+    byteSize: 20,
+    sha256: "abc",
+    text: "Tarikh: 2026-03-12\nHemoglobin 10.4 g/dL",
+    uploadedAt: "2026-03-12T00:00:00.000Z",
+    note: "Teks dibaca.",
+    extractionStatus: "terbaca",
+  })
+  const row = draft.observations[0]!
+  const blocked = applyConfirmation(row, {
+    value: 10.4,
+    unit: "g/dL",
+    takenOn: "2026-03-12",
+    standardKey: "hemoglobin",
+    originalName: "Hemoglobin",
+    acceptUnclear: false,
+    updatedAt: "2026-03-13T00:00:00.000Z",
+  })
+  assert.equal("error" in blocked, false)
+  if ("error" in blocked) return
+  assert.equal(blocked.row.patientId, "pesakit-a")
+  assert.equal(blocked.row.status, "disahkan")
+  const again = { ...blocked.row, id: "lain" }
+  const { saved, skipped } = withoutDuplicateConfirmed([blocked.row], [again])
+  assert.equal(saved.length, 0)
+  assert.equal(skipped.length, 1)
+  assert.deepEqual(recordsForPatient([blocked.row, { ...blocked.row, id: "x", patientId: "pesakit-b" }], "pesakit-a").map((item) => item.patientId), ["pesakit-a"])
+})
+
+test("nilai tidak pasti tidak boleh disahkan tanpa semakan eksplisit", () => {
+  const draft = draftFromText({
+    id: "dokumen-2",
+    patientId: "pesakit-a",
+    fileName: "makmal.pdf",
+    mime: "application/pdf",
+    byteSize: 10,
+    sha256: "def",
+    text: "Albumin",
+    uploadedAt: "2026-03-12T00:00:00.000Z",
+    note: "Sebahagian.",
+    extractionStatus: "separa",
+  })
+  const row = draft.observations[0]!
+  assert.equal(row.uncertain, true)
+  assert.equal(row.value, null)
+  const refused = applyConfirmation(row, {
+    value: 32,
+    unit: "g/L",
+    takenOn: "2026-03-12",
+    standardKey: "albumin",
+    originalName: "Albumin",
+    acceptUnclear: false,
+    updatedAt: "2026-03-13T00:00:00.000Z",
+  })
+  assert.equal("error" in refused, true)
+})

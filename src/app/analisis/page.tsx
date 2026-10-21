@@ -1,12 +1,17 @@
 "use client"
 
+import { LabArchivePanel } from "@/components/lab-archive-panel"
 import { PageHeader } from "@/components/page-header"
 import { analyseRecords } from "@/lib/insight"
 import { useStore } from "@/lib/store"
 
 export default function Page() {
   const { profile, patients, sessions, labs } = useStore()
-  const patient = patients.find((item) => item.id === profile?.patientId) ?? (profile?.role === "pesakit" ? null : patients[0] ?? null)
+  const patient = profile?.role === "super_admin"
+    ? null
+    : profile?.role === "pesakit"
+      ? patients.find((item) => item.id === profile.patientId) ?? null
+      : patients[0] ?? null
   const ownSessions = patient ? sessions.filter((item) => item.patientId === patient.id) : []
   const ownLabs = patient ? labs.filter((item) => item.patientId === patient.id) : []
   const insight = analyseRecords(patient, ownSessions, ownLabs)
@@ -18,7 +23,7 @@ export default function Page() {
         title="Ringkasan rekod anda"
         description="Dibina daripada tarikh dan nilai yang tersimpan. Tiada angka ditambah untuk melengkapkan carta."
       />
-      <p className="text-sm leading-6">{insight.message}</p>
+      {profile?.role === "super_admin" ? null : <p className="text-sm leading-6">{insight.message}</p>}
       {insight.period ? <p className="mt-2 text-sm text-muted-foreground">Tempoh rekod: {insight.period}</p> : null}
       {insight.urgent.length > 0 ? (
         <ul className="mt-4 space-y-2 rounded-2xl bg-destructive/15 p-4 text-sm leading-6">
@@ -42,7 +47,10 @@ export default function Page() {
           </ul>
         </section>
       ) : null}
-      <p className="mt-6 text-sm leading-6 text-muted-foreground">{insight.disclaimer}</p>
+      {profile?.role === "super_admin" ? null : <p className="mt-6 text-sm leading-6 text-muted-foreground">{insight.disclaimer}</p>}
+      <div className="mt-8">
+        <LabArchivePanel sections={["analysis"]} />
+      </div>
     </div>
   )
 }

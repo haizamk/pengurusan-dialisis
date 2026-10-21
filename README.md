@@ -42,6 +42,7 @@ npm run lint
 6. Buka laman, tekan **Daftar super admin**, dan cipta emel serta kata laluan. Butang **Jana** membuat kata laluan. Akaun ini hanya boleh dicipta sekali.
 7. Pesakit tekan **Daftar permohonan pesakit** dan memilih kata laluan sendiri. Super admin meluluskan di halaman **Permohonan**. Selepas itu pesakit log masuk dan mengisi sesi serta rekod darah sendiri.
 8. Jalankan `supabase/portal.sql` sekali. Ia menambah medan sesi dan menutup bacaan rekod kesihatan oleh super admin. Rekod sedia ada tidak dipadam.
+9. Jalankan `supabase/darah.sql` sekali untuk laporan makmal. Ia menambah jadual dokumen, keputusan, audit, dan analisis, serta bucket peribadi `lab-reports`. Ia tidak memadam rekod darah lama. Tiada kunci OCR atau model bahasa disimpan dalam aplikasi. PDF yang ada teks dibaca di pelayar. Imej tidak diekstrak secara automatik.
 
 Pesakit yang diluluskan hanya membaca dan menulis rekod sendiri. Super admin melihat semua rekod dan permohonan. Kunci publishable tanpa sesi tidak boleh membaca rekod klinikal.
 
@@ -78,7 +79,9 @@ UF dikira dalam aplikasi, bukan disimpan sebagai lajur, supaya rumus kekal di sa
 
 ## Rekod darah
 
-Sasaran pada borang ialah julat pemantauan dialisis yang lazim, contohnya hemoglobin 10–12 g/dL, kalium 3.5–5.5 mmol/L, dan URR sekurang-kurangnya 65%. Kreatinin dipaparkan sebagai trend kerana nilainya sentiasa tinggi pada pesakit dialisis.
+Sasaran pada borang manual ialah julat pemantauan dialisis yang lazim, contohnya hemoglobin 10–12 g/dL, kalium 3.5–5.5 mmol/L, dan URR sekurang-kurangnya 65%. Kreatinin dipaparkan sebagai trend kerana nilainya sentiasa tinggi pada pesakit dialisis.
+
+Laporan PDF atau imej disimpan secara peribadi dan tidak terus menjadi rekod. Pesakit menyemak nilai, unit, dan tarikh sebelum pengesahan. Carta dan analisis hanya menggunakan keputusan yang disahkan serta rekod manual yang sedia ada. Unit yang berbeza tidak digabung. Analisis `peraturan-darah-v1` memetik tarikh dan nilai yang tersimpan. Ia bukan diagnosis dan tidak menetapkan ubat, dos, atau perubahan dialisis.
 
 ## Penafian
 
