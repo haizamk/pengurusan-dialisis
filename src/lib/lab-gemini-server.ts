@@ -61,13 +61,13 @@ export async function extractWithGemini(
       try {
         parsed = JSON.parse(text)
       } catch {
-        return { ok: false, errorCode: "gemini-skema", errorMessage: "Balasan Gemini bukan JSON yang sah." }
+        throw new Error("Balasan Gemini bukan JSON yang sah.")
       }
       const validated = validateGeminiPayload(parsed)
-      if (!validated.payload) return { ok: false, errorCode: "gemini-skema", errorMessage: validated.error ?? "Skema Gemini ditolak." }
+      if (!validated.payload) throw new Error(validated.error ?? "Skema Gemini ditolak.")
       const mapped = observationsFromGemini(validated.payload)
       if (mapped.report.observations.length === 0) {
-        return { ok: false, errorCode: "gemini-kosong", errorMessage: "Gemini tidak menemui keputusan yang boleh disahkan daripada teks laporan." }
+        throw new Error("Gemini tidak menemui keputusan yang boleh disahkan daripada teks laporan.")
       }
       return {
         ok: true,
@@ -83,7 +83,66 @@ export async function extractWithGemini(
       if (!isTransient(error) || attempt === 1) break
     }
   }
-  return { ok: false, errorCode: "gemini-gagal", errorMessage: sanitiseError(last) }
+  const mistralKey = process.env.MISTRAL_API_KEY?.trim() || ""
+  if (mistralKey && key) {
+    try {
+      const ocrText = await requestMistralOcr({ bytes, mime, key: mistralKey })
+      if (!ocrText.trim()) throw new Error("Mistral OCR tidak menemui teks pada laporan.")
+      const text = await requestGeminiText({ model, text: ocrText, key })
+      const parsed = JSON.parse(text) as unknown
+      const validated = validateGeminiPayload(parsed)
+      if (!validated.payload) throw new Error(validated.error ?? "Struktur keputusan selepas OCR tidak sah.")
+      const mapped = observationsFromGemini(validated.payload)
+      if (mapped.report.observations.length === 0) throw new Error("OCR berjaya, tetapi tiada keputusan makmal dapat dikenal pasti.")
+      return {
+        ok: true,
+        payload: validated.payload,
+        extract: { ...mapped.report, model: model + " + mistral-ocr-latest", rejected: mapped.rejected },
+      }
+    } catch (fallbackError) {
+      return {
+        ok: false,
+        errorCode: "gemini-mistral-gagal",
+        errorMessage: "Ekstrak utama gagal (" + sanitiseError(last) + "); OCR sandaran juga gagal (" + sanitiseError(fallbackError) + ").",
+      }
+    }
+  }
+  return {
+    ok: false,
+    errorCode: "gemini-gagal",
+    errorMessage: mistralKey
+      ? sanitiseError(last)
+      : sanitiseError(last) + ". Sandaran Mistral OCR belum diaktifkan; tetapkan MISTRAL_API_KEY pada Netlify.",
+  }
+}
+
+async function requestMistralOcr(input: { bytes: Uint8Array; mime: string; key: string }) {
+  const base64 = bytesToBase64(input.bytes)
+  const isPdf = input.mime === "application/pdf"
+  const document = isPdf
+    ? { type: "document_url", document_url: "data:application/pdf;base64," + base64 }
+    : { type: "image_url", image_url: "data:" + input.mime + ";base64," + base64 }
+  const response = await fetch("https://api.mistral.ai/v1/ocr", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + input.key, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "mistral-ocr-latest", document, table_format: "markdown", include_blocks: true }),
+    signal: AbortSignal.timeout(45000),
+  })
+  if (!response.ok) throw new Error("Mistral OCR HTTP " + response.status + ".")
+  const result = await response.json() as { pages?: Array<{ markdown?: string }> }
+  return (result.pages ?? []).map((page, index) => "Halaman " + (index + 1) + ":\n" + (page.markdown ?? "")).join("\n\n").slice(0, 120000)
+}
+
+async function requestGeminiText(input: { model: string; text: string; key: string }) {
+  const ai = new GoogleGenAI({ apiKey: input.key })
+  const response = await ai.models.generateContent({
+    model: input.model,
+    contents: [{ text: GEMINI_EXTRACT_PROMPT + "\n\nTEKS OCR MISTRAL (sumber sahaja, jangan tambah maklumat):\n" + input.text }],
+    config: { responseMimeType: "application/json", responseJsonSchema: GEMINI_RESPONSE_SCHEMA },
+  })
+  const text = response.text?.trim() ?? ""
+  if (!text) throw new Error("Gemini tidak memulangkan struktur keputusan selepas OCR.")
+  return text
 }
 
 async function requestGemini(input: { model: string; mime: string; data: string; key: string }) {
