@@ -139,10 +139,12 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
         allowDuplicate,
       })
       if (stored.error) {
+        setUploadStage("error")
         toast.error(stored.error)
         return
       }
       if (stored.duplicate) {
+        setUploadStage("done")
         setDuplicateFile(typed)
         toast.message("Fail yang sama pernah dimuat naik. Gunakan Cuba baca semula pada laporan itu, atau simpan sebagai pembetulan jika anda mahu salinan baharu.")
         return
