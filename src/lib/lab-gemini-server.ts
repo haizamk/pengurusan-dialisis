@@ -86,7 +86,7 @@ export async function extractWithGemini(
 
   // Gemini is the next fallback. It can structure OCR text, or read the source document directly.
   if (key || generate) {
-    if (mistralText.trim()) {
+    if (key && mistralText.trim()) {
       try {
         const text = await requestGeminiText({ model, text: mistralText, key })
         const result = validateAndMap(text)
