@@ -226,6 +226,24 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
       }
       const bytes = new Uint8Array(await blob.arrayBuffer())
       const outcome = await extractReport(bytes, { name: document.fileName, type: document.mime || "application/pdf" })
+      if (outcome.observations.length === 0) {
+        const failedDocument = {
+          ...document,
+          note: outcome.diagnostic.errorMessage
+            ? `Ekstraksi semula gagal: ${outcome.diagnostic.errorMessage}`
+            : PATIENT_STATUS.failed,
+          extractionStatus: "gagal" as const,
+          processingStatus: "selesai" as const,
+          diagnostic: { ...outcome.diagnostic, documentId: document.id },
+        }
+        await commit({
+          ...data,
+          documents: data.documents.map((item) => item.id === document.id ? failedDocument : item),
+        })
+        setUploadStage("error")
+        toast.error("Ekstraksi AI gagal atau tiada bacaan sah. Bacaan lama dikekalkan; semak butiran teknikal atau cuba lagi.")
+        return
+      }
       const draft = draftFromText({
         id: document.id,
         patientId,
