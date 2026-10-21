@@ -683,6 +683,10 @@ async function pushNewDocument(document: LabDocument, observations: LabObservati
     upsert: false,
   })
   const stored = upload.error ? null : storagePath
+  if (!stored && bytes.length > 4 * 1024 * 1024) {
+    const reason = upload.error?.message ? upload.error.message.slice(0, 160) : "storan awan tidak tersedia"
+    return `Fail melebihi 4 MB tidak boleh disimpan sebagai teks dalam pangkalan data. Salinan kekal hanya di pelayar buat masa ini kerana storan awan gagal (${reason}). Semak bucket lab-reports dan had 20 MB.`
+  }
   if (stored) {
     document.storagePath = stored
     const local = browserArchiveStore().read()
