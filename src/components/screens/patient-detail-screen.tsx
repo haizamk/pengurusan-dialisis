@@ -57,7 +57,7 @@ export function PatientDetailScreen() {
   const patient = patients.find((item) => item.id === id)
   if (!patient) {
     return (
-      <div className="rounded-2xl bg-card p-6 ring-1 ring-foreground/10">
+      <div className="rounded-2xl border border-border/80 bg-card p-5 shadow-sm sm:p-6">
         <h1 className="font-heading text-3xl">Pesakit tidak dijumpai</h1>
         <p className="mt-2 text-sm text-muted-foreground">Rekod ini tiada dalam data semasa.</p>
         <Link href="/pesakit" className="mt-4 inline-block text-sm text-primary underline">
@@ -154,7 +154,7 @@ export function PatientDetailScreen() {
         </div>
       </section>
 
-      <section className="mt-6 rounded-2xl bg-card p-5 ring-1 ring-foreground/10">
+      <section className="mt-6 rounded-2xl border border-border/80 bg-card p-4 shadow-sm sm:p-5">
         <h2 className="font-heading text-2xl">Sesi dialisis</h2>
         {history.length === 0 ? (
           <p className="mt-3 text-sm text-muted-foreground">Belum ada sesi.</p>
@@ -211,7 +211,7 @@ export function PatientDetailScreen() {
         )}
       </section>
 
-      <section className="mt-6 rounded-2xl bg-card p-5 ring-1 ring-foreground/10">
+      <section className="mt-6 rounded-2xl border border-border/80 bg-card p-4 shadow-sm sm:p-5">
         <h2 className="font-heading text-2xl">Rekod darah</h2>
         {labHistory.length === 0 ? (
           <p className="mt-3 text-sm text-muted-foreground">Belum ada sampel.</p>
