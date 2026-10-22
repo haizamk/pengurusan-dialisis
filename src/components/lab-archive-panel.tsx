@@ -13,6 +13,7 @@ import {
   fromBloodRecords,
   mergeConfirmed,
   observationsToConfirmed,
+  observationsToAnalysis,
   parameterSeries,
   safetyMessages,
   type ConfirmedResult,
@@ -98,7 +99,17 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
     })))
     return mergeConfirmed(extracted, fromBloodRecords(ownLabs))
   }, [data, ownLabs])
-  const live = useMemo(() => buildLabAnalysis(confirmed, ""), [confirmed])
+  const analysisReadings = useMemo(() => {
+    if (!data) return confirmed
+    const provisional = observationsToAnalysis(data.observations.map((row) => ({
+      ...row,
+      label: row.originalName,
+      source: row.source === "pesakit" ? "manual" as const : "disahkan" as const,
+    })))
+    return mergeConfirmed(provisional, fromBloodRecords(ownLabs))
+  }, [data, ownLabs, confirmed])
+  const provisionalCount = analysisReadings.filter((row) => row.source === "belum_disemak").length
+  const live = useMemo(() => buildLabAnalysis(analysisReadings, ""), [analysisReadings])
   const urgent = safetyMessages(confirmed)
 
   if (blocked) {
@@ -450,7 +461,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
   }
 
   async function saveAnalysis() {
-    if (!data || !patientId || confirmed.length === 0 || analysing) return
+    if (!data || !patientId || analysisReadings.length === 0 || analysing) return
     setAnalysing(true)
     setAnalysisStage("session")
     try {
@@ -466,13 +477,14 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          results: confirmed.map((item) => ({
+          results: analysisReadings.map((item) => ({
             key: item.standardKey,
             label: item.label,
             date: item.takenOn,
             value: item.value,
             unit: item.unit,
             referenceRange: item.refText,
+            unverified: item.source === "belum_disemak",
           })),
         }),
       })
@@ -679,7 +691,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
         <section>
           <h2 className="font-heading text-2xl">Graf setiap parameter</h2>
           <div className="mt-3">
-            <ParameterCharts series={parameterSeries(confirmed)} onOpen={(documentId) => {
+            <ParameterCharts series={parameterSeries(analysisReadings)} onOpen={(documentId) => {
               const document = data?.documents.find((item) => item.id === documentId)
               if (document) void openDocument(document)
             }} />
@@ -691,7 +703,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
         <section className="grid gap-3">
           <h2 className="font-heading text-2xl">Analisis AI</h2>
           <p className="text-sm leading-6 text-muted-foreground">
-            Graf, penerangan dan tip pemakanan boleh menggunakan bacaan ekstrak yang belum disemak. Keputusan AI mungkin salah: bandingkan dengan laporan makmal sebelum mengambil tindakan. Ini bukan diagnosis atau arahan mengubah ubat/dialisis; semak tip pemakanan dengan pasukan dialisis.
+            {provisionalCount > 0 ? `${provisionalCount} bacaan AI belum disemak digunakan untuk analisis dan graf. ` : ""}Graf, penerangan dan tip pemakanan boleh menggunakan bacaan ekstrak yang belum disemak. Keputusan AI mungkin salah: bandingkan dengan laporan makmal sebelum mengambil tindakan. Ini bukan diagnosis atau arahan mengubah ubat/dialisis; semak tip pemakanan dengan pasukan dialisis.
           </p>
           {live.summary.map((item) => <p key={item} className="rounded-2xl bg-card p-4 text-sm leading-6 ring-1 ring-foreground/10">{item}</p>)}
           {live.parameters.map((item) => (
