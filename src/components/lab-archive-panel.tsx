@@ -316,7 +316,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
   async function confirmAll(document: LabDocument, drafts: Record<string, ReviewDraft>) {
     if (!data || !patientId) return
     const rows = data.observations.filter((row) => row.documentId === document.id && row.status !== "disahkan")
-    if (rows.length === 0) { toast.message("Tiada bacaan baharu untuk disahkan."); return }
+    if (rows.length === 0) { toast.message("Semua bacaan sudah disahkan, atau tiada bacaan untuk disimpan."); return }
     const updatedAt = new Date().toISOString()
     const confirmedRows: LabObservation[] = []
     for (const row of rows) {
@@ -375,6 +375,24 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
     const next = { ...base, [mapped.field]: row.value }
     pendingLabs.current.set(row.takenOn, next)
     await saveLab(next, existing ? "update" : "insert")
+  }
+
+  async function deleteManual(row: LabObservation) {
+    if (!data || !patientId || row.patientId !== patientId || row.source !== "pesakit" || row.status === "disahkan") {
+      toast.error("Hanya parameter manual yang belum disahkan boleh dipadam.")
+      return
+    }
+    if (!window.confirm(`Padam parameter manual "${row.originalName || "Parameter tanpa nama"}"? Tindakan ini tidak boleh dibatalkan.`)) return
+    const observations = data.observations.filter((item) => item.id !== row.id)
+    const documents = data.documents.map((item) => item.id === row.documentId ? { ...item, reviewStatus: documentStatus(observations, item.id) } : item)
+    const note = await savePatientArchive(patientId, { ...data, observations, documents })
+    if (note) {
+      setCloudNote(note)
+      toast.error("Parameter tidak dapat dipadam sepenuhnya dari storan awan. Sila cuba lagi.")
+      return
+    }
+    setData({ ...data, observations, documents })
+    toast.success("Parameter manual telah dipadam.")
   }
 
   async function addManual(documentId: string | null) {
@@ -585,6 +603,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
               onOpen={() => void openDocument(active)}
               onAdd={() => void addManual(active.id)}
               onConfirmAll={(drafts) => void confirmAll(active, drafts)}
+              onDeleteManual={(row) => void deleteManual(row)}
             />
           ) : null}
         </section>
@@ -720,6 +739,7 @@ function ReviewCard({
   onOpen,
   onAdd,
   onConfirmAll,
+  onDeleteManual,
 }: {
   document: LabDocument
   observations: LabObservation[]
@@ -727,6 +747,7 @@ function ReviewCard({
   onOpen: () => void
   onAdd: () => void
   onConfirmAll: (drafts: Record<string, ReviewDraft>) => void
+  onDeleteManual: (row: LabObservation) => void
 }) {
   const signature = observations.map((row) => `${row.id}:${row.updatedAt}:${row.status}:${row.value ?? ""}`).join("|")
   const [state, setState] = useState(() => ({ signature, drafts: draftsFrom(observations) }))
@@ -769,14 +790,17 @@ function ReviewCard({
               <details className="text-sm"><summary className="min-h-10 cursor-pointer text-muted-foreground">Ubah tarikh ujian (jika salah)</summary><Label htmlFor={`${row.id}-tarikh`}>Tarikh ujian</Label><Input id={`${row.id}-tarikh`} className="!h-12" type="date" value={draft.takenOn} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, takenOn: event.target.value } })} /></details>
               {row.refText ? <p className="text-sm text-muted-foreground">Julat tercetak: {row.refText}</p> : null}
               <label className="flex min-h-12 items-center gap-3 text-sm"><input type="checkbox" className="size-5" checked={draft.accept} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, accept: event.target.checked } })} />Saya telah bandingkan bacaan dengan laporan asal.</label>
-              <Button type="button" className="!h-12 w-fit" onClick={() => onConfirm(row, draft)}>Sahkan bacaan ini</Button>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" className="!h-12 w-fit" onClick={() => onConfirm(row, draft)}>Sahkan bacaan ini</Button>
+                {row.source === "pesakit" && row.status !== "disahkan" ? <Button type="button" variant="destructive" className="!h-12" onClick={() => onDeleteManual(row)}>Padam parameter manual</Button> : null}
+              </div>
             </div>
           </details>
         )
       })}
       <div className="flex flex-wrap gap-3">
         <Button type="button" variant="outline" className="!h-12" onClick={onAdd}>Tambah keputusan manual</Button>
-        <Button type="button" className="!h-12" disabled={!observations.some((row) => row.status !== "disahkan")} onClick={() => onConfirmAll(drafts)}>Semua Parameter Sepadan. Simpan sekarang</Button>
+        <Button type="button" className="!h-12" onClick={() => onConfirmAll(drafts)}>Semua Parameter Sepadan. Simpan sekarang</Button>
       </div>
     </div>
   )
