@@ -93,7 +93,7 @@ Keputusan darah (unverified=true bermaksud bacaan AI belum disemak; nyatakan ket
     // Use the same Nous Research OpenAI-compatible gateway as lab extraction.
     // A Gemini model can be selected via NOUS_ANALYSIS_MODEL only if Nous exposes it.
     const model = process.env.NOUS_ANALYSIS_MODEL?.trim() || process.env.NOUS_LAB_MODEL?.trim() || "openai/gpt-4o"
-    const baseUrl = (process.env.NOUS_API_BASE_URL?.trim() || "https://inference-api.nousresearch.com/v1").replace(/\\/$/, "")
+    const baseUrl = (process.env.NOUS_API_BASE_URL?.trim() || "https://inference-api.nousresearch.com/v1").replace(/\/$/, "")
     const upstream = await fetch(baseUrl + "/chat/completions", {
       method: "POST",
       headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
@@ -114,7 +114,7 @@ Keputusan darah (unverified=true bermaksud bacaan AI belum disemak; nyatakan ket
     }
     const upstreamJson = await upstream.json() as { choices?: Array<{ message?: { content?: string | Array<{ text?: string }> } }> }
     const output = upstreamJson.choices?.[0]?.message?.content
-    const answer = typeof output === "string" ? output : Array.isArray(output) ? output.map((part) => part.text || "").join("\\n") : ""
+    const answer = typeof output === "string" ? output : Array.isArray(output) ? output.map((part) => part.text || "").join("\n") : ""
     if (!answer.trim()) return Response.json({ error: "Nous tidak memulangkan analisis. Cuba semula." }, { status: 502 })
     let parsed: { summary?: unknown; parameters?: unknown; safety?: unknown }
     try { parsed = JSON.parse(answer) } catch {
