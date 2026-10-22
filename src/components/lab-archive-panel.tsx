@@ -109,7 +109,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
     if (!patientId) return
     setData(next)
     const note = await savePatientArchive(patientId, next)
-    if (note) setCloudNote(note)
+    if (note) { setCloudNote(note); throw new Error(note) }
   }
 
   async function upload(file: File, allowDuplicate: boolean) {
@@ -308,9 +308,14 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
     const audit = auditChange(row, result.row, updatedAt)
     const observations = data.observations.map((item) => (item.id === row.id ? result.row : item))
     const documents = data.documents.map((item) => item.id === row.documentId ? { ...item, reviewStatus: documentStatus(observations, item.id) } : item)
-    await commit({ ...data, documents, observations, audits: audit ? [...data.audits, audit] : data.audits })
-    await mirrorBloodRecord(result.row, documents.find((item) => item.id === row.documentId)?.fileName ?? "laporan")
-    toast.success("Keputusan disahkan dan disimpan.")
+    const notification = toast.loading("Sedang menyimpan bacaan…")
+    try {
+      await commit({ ...data, documents, observations, audits: audit ? [...data.audits, audit] : data.audits })
+      await mirrorBloodRecord(result.row, documents.find((item) => item.id === row.documentId)?.fileName ?? "laporan")
+      toast.success("✓ Berjaya disimpan dalam Rekod Darah.", { id: notification, duration: 6000 })
+    } catch (error) {
+      toast.error(error instanceof Error ? `Tidak berjaya disimpan: ${error.message}` : "Tidak berjaya disimpan.", { id: notification, duration: 8000 })
+    }
   }
 
   async function confirmAll(document: LabDocument, drafts: Record<string, ReviewDraft>) {
@@ -356,12 +361,13 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
     const observations = data.observations.map((row) => byId.get(row.id) ?? row)
     const documents = data.documents.map((item) => item.id === document.id ? { ...item, reviewStatus: documentStatus(observations, item.id) } : item)
     const audits = rows.map((row) => auditChange(row, byId.get(row.id)!, updatedAt)).filter((audit): audit is NonNullable<typeof audit> => audit != null)
+    const notification = toast.loading("Sedang menyimpan semua bacaan…")
     try {
       await commit({ ...data, documents, observations, audits: [...data.audits, ...audits] })
       for (const row of confirmedRows) await mirrorBloodRecord(row, document.fileName)
-      toast.success(`${confirmedRows.length} bacaan telah disahkan dan disimpan.`)
+      toast.success(`✓ ${confirmedRows.length} bacaan berjaya disimpan dalam Rekod Darah.`, { id: notification, duration: 6000 })
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Gagal menyimpan semua bacaan.")
+      toast.error(error instanceof Error ? `Tidak berjaya disimpan: ${error.message}` : "Gagal menyimpan semua bacaan.", { id: notification, duration: 8000 })
     }
   }
 
