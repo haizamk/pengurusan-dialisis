@@ -494,7 +494,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
         body: result,
       }
       await commit({ ...data, analyses: [stored, ...data.analyses] })
-      toast.success("Analisis AI bagi semua keputusan berjaya disimpan.")
+      toast.success("✓ Analisis baharu berjaya disimpan berdasarkan bacaan terkini.")
     } catch {
       toast.error("Tidak dapat menjana analisis AI. Rekod asal kekal selamat.")
     } finally {
@@ -682,7 +682,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
         <section className="grid gap-3">
           <h2 className="font-heading text-2xl">Analisis AI</h2>
           <p className="text-sm leading-6 text-muted-foreground">
-            Analisis AI dijana daripada keputusan yang telah disahkan. Ia ialah penerangan pendidikan, bukan diagnosis atau arahan mengubah ubat/dialisis. Tip pemakanan perlu disemak bersama pasukan dialisis.
+            Graf, penerangan dan tip pemakanan boleh menggunakan bacaan ekstrak yang belum disemak. Keputusan AI mungkin salah: bandingkan dengan laporan makmal sebelum mengambil tindakan. Ini bukan diagnosis atau arahan mengubah ubat/dialisis; semak tip pemakanan dengan pasukan dialisis.
           </p>
           {live.summary.map((item) => <p key={item} className="rounded-2xl bg-card p-4 text-sm leading-6 ring-1 ring-foreground/10">{item}</p>)}
           {live.parameters.map((item) => (
@@ -695,7 +695,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
             </article>
           ))}
           <Button type="button" className="!h-12 w-fit" disabled={confirmed.length === 0 || analysing} onClick={() => void saveAnalysis()}>
-            {analysing ? "Sedang menjana analisis AI…" : "Jana dan simpan analisis AI"}
+            {analysing ? "Sedang menjana analisis AI…" : "Jalankan Analisis Baru"}
           </Button>
           {analysing && analysisStage ? (
             <div role="status" aria-live="polite" className="rounded-2xl border border-primary/40 bg-primary/10 p-4">
@@ -704,7 +704,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
               <ol className="mt-3 grid gap-2 text-sm">
                 {[
                   ["session", "Sahkan sesi pesakit"],
-                  ["sending", "Hantar keputusan yang disahkan"],
+                  ["sending", "Hantar bacaan tersimpan (termasuk yang belum disemak)"],
                   ["analysing", "Gemini menganalisis setiap parameter"],
                   ["saving", "Simpan analisis dan tip pemakanan"],
                 ].map(([stage, label], index) => {
@@ -721,6 +721,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
             return (
               <article key={item.id} className="rounded-2xl bg-muted p-4 text-sm leading-6">
                 <p className="font-medium">Disimpan {formatDate(item.createdAt.slice(0, 10))} {item.createdAt.slice(11, 16)} · {item.version}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Analisis ini menggunakan bacaan yang tersedia pada waktu ia dijana. Jika bacaan diubah selepas itu, tekan “Jalankan Analisis Baru”.</p>
                 <p className="mt-2 whitespace-pre-wrap">{item.summary}</p>
                 {aiParameters.map((parameter, index) => (
                   <div key={`${parameter.key ?? "parameter"}-${parameter.date ?? index}-${index}`} className="mt-3 rounded-xl border border-border bg-card p-3">
