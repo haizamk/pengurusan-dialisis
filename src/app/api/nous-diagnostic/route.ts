@@ -1,10 +1,8 @@
-import { NextResponse } from "next/server"
-
-export const runtime = "nodejs"
-export const dynamic = "force-dynamic"
+import { connection, NextResponse } from "next/server"
 
 // Read-only connectivity probe: no model inference, patient data or credentials returned.
 export async function GET() {
+  await connection()
   const key = process.env.NOUS_API_KEY?.trim()
   if (!key) return NextResponse.json({ ok: false, stage: "configuration", message: "NOUS_API_KEY tidak tersedia pada deployment ini." }, { status: 503 })
 
