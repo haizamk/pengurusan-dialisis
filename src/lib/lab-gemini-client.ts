@@ -9,23 +9,37 @@ export async function requestLabExtract(
   bytes: Uint8Array,
   file: { name: string; type: string },
 ): Promise<GeminiClientResult | null> {
-  if (typeof window === "undefined" || bytes.length > MAX_GEMINI_FILE_BYTES) return null
+  if (typeof window === "undefined") return null
+  if (bytes.length > MAX_GEMINI_FILE_BYTES) return { ok: false, errorCode: "fail-terlalu-besar", errorMessage: "Fail melebihi had 20 MB untuk ekstraksi AI." }
   const form = new FormData()
   form.append("file", new Blob([new Uint8Array(bytes)], { type: file.type || "application/octet-stream" }), file.name)
   const headers: Record<string, string> = {}
   const supabase = getSupabase()
-  if (supabase) {
-    const session = await supabase.auth.getSession()
-    if (session.data.session?.access_token) headers.Authorization = `Bearer ${session.data.session.access_token}`
+  if (!supabase) {
+    return { ok: false, errorCode: "supabase-tidak-dikonfigurasi", errorMessage: "Pengesahan Supabase tidak tersedia pada pelayar." }
   }
+  let sessionResult
+  try {
+    sessionResult = await supabase.auth.getSession()
+  } catch {
+    return { ok: false, errorCode: "sesi-tidak-dapat-dibaca", errorMessage: "Sesi log masuk tidak dapat dibaca. Muat semula halaman dan cuba lagi." }
+  }
+  if (sessionResult.error) {
+    return { ok: false, errorCode: "sesi-tidak-dapat-dibaca", errorMessage: "Sesi log masuk tidak dapat disahkan pada pelayar. Muat semula halaman dan cuba lagi." }
+  }
+  const accessToken = sessionResult.data.session?.access_token
+  if (!accessToken) {
+    return { ok: false, errorCode: "sesi-tidak-ditemui", errorMessage: "Tiada sesi log masuk pesakit pada pelayar. Log masuk semula sebelum mengekstrak laporan." }
+  }
+  headers.Authorization = `Bearer ${accessToken}`
   let response: Response
   try {
     response = await fetch("/api/lab-extract", { method: "POST", body: form, headers })
   } catch (error) {
     return {
       ok: false,
-      errorCode: "gemini-gagal",
-      errorMessage: error instanceof Error ? error.message.slice(0, 180) : "Tidak dapat menghubungi pelayan Gemini.",
+      errorCode: "ekstrak-gagal",
+      errorMessage: error instanceof Error ? error.message.slice(0, 180) : "Tidak dapat menghubungi pelayan ekstraksi.",
     }
   }
   let body: Record<string, unknown> = {}
@@ -34,29 +48,29 @@ export async function requestLabExtract(
   } catch {
     body = {}
   }
-  if (response.status === 503 && body.errorCode === "gemini-tidak-tersedia") {
-    return { ok: false, errorCode: "gemini-tidak-tersedia", errorMessage: String(body.errorMessage ?? "Gemini belum dikonfigurasi.") }
+  if (response.status === 503 && (body.errorCode === "nous-tidak-tersedia" || body.errorCode === "supabase-tidak-dikonfigurasi")) {
+    return { ok: false, errorCode: String(body.errorCode), errorMessage: String(body.errorMessage ?? "Perkhidmatan ekstraksi belum dikonfigurasi.") }
   }
   if (!response.ok) {
     return {
       ok: false,
       errorCode: typeof body.errorCode === "string" ? body.errorCode : "gemini-gagal",
-      errorMessage: typeof body.errorMessage === "string" ? body.errorMessage : "Bacaan Gemini gagal.",
+      errorMessage: typeof body.errorMessage === "string" ? body.errorMessage : "Ekstraksi laporan gagal.",
     }
   }
   const validated = validateGeminiPayload(body.payload)
   if (!validated.payload) {
-    return { ok: false, errorCode: "gemini-skema", errorMessage: validated.error ?? "Skema Gemini ditolak." }
+    return { ok: false, errorCode: "ekstrak-skema", errorMessage: validated.error ?? "Skema Gemini ditolak." }
   }
   const mapped = observationsFromGemini(validated.payload)
   if (mapped.report.observations.length === 0) {
-    return { ok: false, errorCode: "gemini-kosong", errorMessage: "Gemini tidak menemui keputusan yang boleh disahkan." }
+    return { ok: false, errorCode: "ekstrak-kosong", errorMessage: "Model melalui Nous tidak menemui keputusan yang boleh disimpan." }
   }
   return {
     ok: true,
     extract: {
       ...mapped.report,
-      model: typeof body.model === "string" ? body.model : "gemini-3.8-flash",
+      model: typeof body.model === "string" ? body.model : "openai/gpt-4o via Nous",
       rejected: mapped.rejected,
     },
   }
