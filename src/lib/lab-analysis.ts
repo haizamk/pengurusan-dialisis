@@ -9,7 +9,7 @@ export type ConfirmedResult = {
   value: number
   unit: string
   refText: string | null
-  source: "disahkan" | "manual"
+  source: "disahkan" | "manual" | "belum_disemak"
   documentId?: string | null
 }
 
@@ -174,7 +174,7 @@ export function buildLabAnalysis(results: ConfirmedResult[], generatedAt: string
           : " Hanya satu bacaan setanding, jadi trend tidak dapat ditentukan."
         return `${item.latest.label}: ${item.latest.value} ${item.unit} pada ${item.latest.takenOn}.${comparison}`
       })
-    : ["Tiada keputusan yang disahkan untuk dianalisis."]
+    : ["Tiada bacaan dengan nilai dan unit yang boleh dipaparkan untuk dianalisis."]
   return {
     version: ANALYSIS_VERSION,
     generatedAt,
@@ -185,7 +185,7 @@ export function buildLabAnalysis(results: ConfirmedResult[], generatedAt: string
     safety: safetyMessages(results),
     diet: dietNotes(series),
     disclaimer:
-      "Analisis dan cadangan pemakanan ini ialah sokongan pendidikan berdasarkan rekod yang disahkan. Ia bukan diagnosis, bukan preskripsi, dan bukan pengganti nasihat pakar diet buah pinggang atau nefrologi.",
+      "Analisis dan cadangan pemakanan ini ialah sokongan pendidikan berdasarkan rekod yang mungkin belum disemak. Sahkan bacaan dengan laporan asal sebelum membuat keputusan. Ia bukan diagnosis, bukan preskripsi, dan bukan pengganti nasihat pakar diet buah pinggang atau nefrologi.",
   }
 }
 
@@ -196,6 +196,27 @@ export function filterByRange<T extends { takenOn: string }>(points: T[], range:
   start.setUTCMonth(start.getUTCMonth() - months)
   const cutoff = start.toISOString().slice(0, 10)
   return points.filter((point) => point.takenOn >= cutoff)
+}
+
+/** Provisional readings are usable for display and educational trends, never as verified records. */
+export function observationsToAnalysis(
+  rows: Array<ParsedObservation & { takenOn: string; label?: string; source: "disahkan" | "manual"; status: "disahkan" | "perlu_semakan"; documentId?: string | null }>,
+): ConfirmedResult[] {
+  return rows.flatMap((row) => {
+    if (row.value == null || !Number.isFinite(row.value) || !row.unit?.trim() || !row.takenOn) return []
+    // Do not use unverified implausible numbers for charts or dietary interpretations.
+    if (row.status !== "disahkan" && (row.value < 0 || row.value > 10000)) return []
+    return [{
+      standardKey: row.standardKey ?? `nama:${row.originalName}`,
+      label: row.label ?? row.originalName,
+      takenOn: row.takenOn,
+      value: row.value,
+      unit: normaliseLabUnit(row.unit),
+      refText: row.refText,
+      source: row.status === "disahkan" ? row.source : "belum_disemak" as const,
+      documentId: row.documentId ?? null,
+    }]
+  })
 }
 
 export function observationsToConfirmed(
