@@ -157,8 +157,11 @@ export function observationsFromGemini(payload: GeminiPayload): { report: Parsed
     // Preserve an evidence-backed numeric reading as a *pending* draft even when the
     // parameter is not in our small catalogue or the model marked it uncertain.
     // Never infer a value from the reference range or a mismatched source snippet.
-    const hasSupportedValue = Boolean(item.valueText) && numbers.length === 1 && Boolean(unit) && !bounded
-    const certain = hasSupportedValue && Boolean(catalogue) && !item.uncertain
+    // A missing unit in the evidence snippet must not erase an otherwise verified
+    // numeric reading. Keep it visible for manual review, but never auto-confirm
+    // or invent a unit. The value itself must still match the visible source text.
+    const hasSupportedValue = Boolean(item.valueText) && numbers.length === 1 && !bounded
+    const certain = hasSupportedValue && Boolean(unit) && Boolean(catalogue) && !item.uncertain
     const snippet = item.page ? `Halaman ${item.page}: ${item.visibleText}` : item.visibleText
     observations.push({
       originalName: catalogue && certain ? catalogue.label : item.name,
