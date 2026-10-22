@@ -707,44 +707,29 @@ function ReviewCard({
         const draft = drafts[row.id]
         if (!draft) return null
         return (
-          <div key={row.id} className="grid gap-3 border-t border-border pt-4">
-            <p className="text-sm leading-6">
-              {row.status === "disahkan" ? "Disahkan. " : "Belum disahkan. "}
-              {row.uncertain ? "Nilai atau tarikh tidak pasti. " : "Teks ini lengkap, tetapi masih perlukan semakan anda. "}
-              {row.source === "pesakit" ? "Dimasukkan pesakit." : "Diekstrak, belum menjadi rekod sehingga disahkan."}
-            </p>
-            <blockquote className="rounded-lg bg-muted px-3 py-2 text-sm leading-6">{row.snippet}</blockquote>
-            <Label htmlFor={`${row.id}-nama`}>Nama pada laporan</Label>
-            <Input id={`${row.id}-nama`} className="!h-12" value={draft.originalName} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, originalName: event.target.value } })} />
-            <Label htmlFor={`${row.id}-parameter`}>Parameter standard</Label>
-            <ChoiceSelect
-              id={`${row.id}-parameter`}
-              value={draft.standardKey}
-              onChange={(value) => setDrafts({ ...drafts, [row.id]: { ...draft, standardKey: value } })}
-              placeholder="Biarkan jika tidak pasti"
-              options={LAB_PARAMETERS.map((item) => ({ value: item.key, label: item.label }))}
-            />
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div>
-                <Label htmlFor={`${row.id}-nilai`}>Nilai</Label>
-                <Input id={`${row.id}-nilai`} className="!h-12" inputMode="decimal" value={draft.value} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, value: event.target.value } })} />
+          <details key={row.id} className="group rounded-xl border border-border/80 bg-background/50 p-3">
+            <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
+              <span className="min-w-0">
+                <span className="block truncate font-medium">{draft.originalName || "Parameter tanpa nama"}</span>
+                <span className="block text-sm text-muted-foreground">{draft.value.trim() ? `${draft.value} ${draft.unit}` : "Nilai belum dikenal pasti"} · {row.status === "disahkan" ? "Disahkan" : "Perlu semakan"}</span>
+              </span>
+              <span className="shrink-0 text-sm font-medium text-primary">Ada maklumat salah / Edit <span aria-hidden="true">⌄</span></span>
+            </summary>
+            <div className="mt-3 grid gap-3 border-t border-border pt-3">
+              <p className="text-sm text-muted-foreground">Ubah hanya maklumat yang salah. Bandingkan dengan laporan asal sebelum mengesahkan.</p>
+              <blockquote className="rounded-lg bg-muted px-3 py-2 text-sm leading-6">{row.snippet}</blockquote>
+              <Label htmlFor={`${row.id}-nama`}>Nama pada laporan</Label>
+              <Input id={`${row.id}-nama`} className="!h-12" value={draft.originalName} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, originalName: event.target.value } })} />
+              <Label htmlFor={`${row.id}-parameter`}>Parameter standard</Label>
+              <ChoiceSelect id={`${row.id}-parameter`} value={draft.standardKey} onChange={(value) => setDrafts({ ...drafts, [row.id]: { ...draft, standardKey: value } })} placeholder="Biarkan jika tidak pasti" options={LAB_PARAMETERS.map((item) => ({ value: item.key, label: item.label }))} />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div><Label htmlFor={`${row.id}-nilai`}>Nilai</Label><Input id={`${row.id}-nilai`} className="!h-12" inputMode="decimal" value={draft.value} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, value: event.target.value } })} /></div>
+                <div><Label htmlFor={`${row.id}-unit`}>Unit</Label><Input id={`${row.id}-unit`} className="!h-12" value={draft.unit} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, unit: event.target.value } })} /></div>
               </div>
-              <div>
-                <Label htmlFor={`${row.id}-unit`}>Unit</Label>
-                <Input id={`${row.id}-unit`} className="!h-12" value={draft.unit} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, unit: event.target.value } })} />
-              </div>
-              <div>
-                <Label htmlFor={`${row.id}-tarikh`}>Tarikh ujian</Label>
-                <Input id={`${row.id}-tarikh`} className="!h-12" type="date" value={draft.takenOn} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, takenOn: event.target.value } })} />
-              </div>
+              <details className="text-sm"><summary className="min-h-10 cursor-pointer text-muted-foreground">Ubah tarikh ujian (jika salah)</summary><Label htmlFor={`${row.id}-tarikh`}>Tarikh ujian</Label><Input id={`${row.id}-tarikh`} className="!h-12" type="date" value={draft.takenOn} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, takenOn: event.target.value } })} /></details>
+              {row.refText ? <p className="text-sm text-muted-foreground">Julat tercetak: {row.refText}</p> : null}
             </div>
-            {row.refText ? <p className="text-sm leading-6">Julat tercetak: {row.refText}</p> : null}
-            <label className="flex min-h-12 items-center gap-3 text-sm">
-              <input type="checkbox" className="size-5" checked={draft.accept} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, accept: event.target.checked } })} />
-              Saya telah semak nilai ini pada laporan asal.
-            </label>
-            <Button type="button" className="!h-12 w-fit" onClick={() => onConfirm(row, draft)}>Sahkan keputusan</Button>
-          </div>
+          </details>
         )
       })}
       <Button type="button" variant="outline" className="!h-12 w-fit" onClick={onAdd}>Tambah keputusan manual</Button>
