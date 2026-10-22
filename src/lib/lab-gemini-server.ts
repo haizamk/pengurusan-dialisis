@@ -44,11 +44,14 @@ export async function extractWithGemini(
     return { ok: false, errorCode: "tiada-enjin", errorMessage: "Tetapkan NOUS_API_KEY pada pelayan Netlify. Ekstraksi menggunakan model OpenAI GPT-4o melalui Nous Research." }
   }
 
+  let stage = "penyediaan fail"
   try {
     const images = await documentImages(bytes, kind)
+    stage = "permintaan Nous"
     const payload = await requestNousVision({ images, key: apiKey })
+    stage = "pengesahan bacaan"
     const parsed = validateAndMap(payload)
-    if (!parsed) throw new Error("Model OpenAI GPT-4o melalui Nous tidak menghasilkan struktur keputusan makmal yang sah.")
+    if (!parsed) throw new Error("Respons AI tiada bacaan yang dapat disahkan daripada teks sumber.")
 
     return {
       ok: true,
@@ -59,7 +62,7 @@ export async function extractWithGemini(
     return {
       ok: false,
       errorCode: "ekstrak-gagal",
-      errorMessage: sanitiseError(error) + ". Ekstraksi menggunakan Nous Research sahaja. Semak keputusan secara manual; tiada nilai dibetulkan secara automatik.",
+      errorMessage: "Gagal pada peringkat " + stage + ": " + sanitiseError(error) + ". Rekod lama tidak diubah.",
     }
   }
 }
@@ -73,7 +76,8 @@ async function documentImages(bytes: Uint8Array, kind: "pdf" | "png" | "jpeg") {
   if (pdf.numPages > 10) throw new Error("PDF melebihi had 10 halaman untuk ekstraksi visual. Muat naik bahagian laporan yang berkaitan.")
   const images: Array<{ mime: string; data: string }> = []
   for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
-    const options: { scale: number; canvasImport?: () => Promise<unknown> } = { scale: 2, canvasImport: nodeCanvas }
+    // Reduce rendering cost for multi-page scanned PDFs within serverless execution limits.
+    const options: { scale: number; canvasImport?: () => Promise<unknown> } = { scale: 1.5, canvasImport: nodeCanvas }
     const rendered = await renderPageAsImage(new Uint8Array(bytes), pageNumber, options as never)
     images.push({ mime: "image/png", data: bytesToBase64(new Uint8Array(rendered)) })
   }
@@ -106,7 +110,8 @@ async function requestNousVision(input: { images: Array<{ mime: string; data: st
       temperature: 0,
       max_tokens: 12000,
     }),
-    signal: AbortSignal.timeout(90000),
+    // Netlify function budget is 60s; return a controlled failure before platform timeout.
+    signal: AbortSignal.timeout(45000),
   })
   if (!response.ok) throw new Error("Nous API HTTP " + response.status + ".")
   const result = await response.json() as { choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }> }
