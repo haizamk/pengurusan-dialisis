@@ -19,6 +19,7 @@ async function authorisePatient(request: Request): Promise<AuthResult> {
   }
 
   const client = createClient(supabaseUrl(), supabaseAnonKey(), {
+    global: { headers: { Authorization: "Bearer " + token } },
     auth: { persistSession: false, autoRefreshToken: false },
   })
   const { data, error } = await client.auth.getUser(token)
