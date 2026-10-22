@@ -313,6 +313,43 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
     toast.success("Keputusan disahkan dan disimpan.")
   }
 
+  async function confirmAll(document: LabDocument, drafts: Record<string, ReviewDraft>) {
+    if (!data || !patientId) return
+    const rows = data.observations.filter((row) => row.documentId === document.id && row.status !== "disahkan")
+    if (rows.length === 0) { toast.message("Tiada bacaan baharu untuk disahkan."); return }
+    const updatedAt = new Date().toISOString()
+    const confirmedRows: LabObservation[] = []
+    for (const row of rows) {
+      const draft = drafts[row.id]
+      if (!draft || !draft.value.trim() || !draft.unit.trim() || !draft.takenOn || !draft.standardKey) {
+        toast.error(`Bacaan ${row.originalName} belum lengkap. Semak atau edit dahulu.`)
+        return
+      }
+      const result = applyConfirmation(row, {
+        value: Number(draft.value.replace(",", ".")), unit: draft.unit,
+        takenOn: draft.takenOn, standardKey: draft.standardKey,
+        originalName: draft.originalName, acceptUnclear: true, updatedAt,
+      })
+      if ("error" in result) { toast.error(`${row.originalName}: ${result.error}`); return }
+      confirmedRows.push(result.row)
+    }
+    const existing = data.observations.filter((row) => !rows.some((candidate) => candidate.id === row.id))
+    const { skipped } = withoutDuplicateConfirmed(existing, confirmedRows)
+    if (skipped.length > 0) { toast.error("Terdapat keputusan pendua. Semak setiap bacaan sebelum menyimpan."); return }
+    if (!window.confirm(`Saya telah membandingkan semua ${rows.length} bacaan dengan laporan asal dan mengesahkan semuanya betul. Simpan sekarang?`)) return
+    const byId = new Map(confirmedRows.map((row) => [row.id, row]))
+    const observations = data.observations.map((row) => byId.get(row.id) ?? row)
+    const documents = data.documents.map((item) => item.id === document.id ? { ...item, reviewStatus: documentStatus(observations, item.id) } : item)
+    const audits = rows.map((row) => auditChange(row, byId.get(row.id)!, updatedAt)).filter((audit): audit is NonNullable<typeof audit> => audit != null)
+    try {
+      await commit({ ...data, documents, observations, audits: [...data.audits, ...audits] })
+      for (const row of confirmedRows) await mirrorBloodRecord(row, document.fileName)
+      toast.success(`${confirmedRows.length} bacaan telah disahkan dan disimpan.`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Gagal menyimpan semua bacaan.")
+    }
+  }
+
   async function mirrorBloodRecord(row: LabObservation, fileName: string) {
     if (!patientId || row.value == null || row.status !== "disahkan") return
     const mapped = BLOOD_RECORD_FIELDS.find((item) => item.key === row.standardKey && item.unit === row.unit)
@@ -547,6 +584,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
               onConfirm={(row, draft) => void confirmRow(row, draft)}
               onOpen={() => void openDocument(active)}
               onAdd={() => void addManual(active.id)}
+              onConfirmAll={(drafts) => void confirmAll(active, drafts)}
             />
           ) : null}
         </section>
@@ -681,12 +719,14 @@ function ReviewCard({
   onConfirm,
   onOpen,
   onAdd,
+  onConfirmAll,
 }: {
   document: LabDocument
   observations: LabObservation[]
   onConfirm: (row: LabObservation, draft: ReviewDraft) => void
   onOpen: () => void
   onAdd: () => void
+  onConfirmAll: (drafts: Record<string, ReviewDraft>) => void
 }) {
   const signature = observations.map((row) => `${row.id}:${row.updatedAt}:${row.status}:${row.value ?? ""}`).join("|")
   const [state, setState] = useState(() => ({ signature, drafts: draftsFrom(observations) }))
@@ -734,7 +774,10 @@ function ReviewCard({
           </details>
         )
       })}
-      <Button type="button" variant="outline" className="!h-12 w-fit" onClick={onAdd}>Tambah keputusan manual</Button>
+      <div className="flex flex-wrap gap-3">
+        <Button type="button" variant="outline" className="!h-12" onClick={onAdd}>Tambah keputusan manual</Button>
+        <Button type="button" className="!h-12" disabled={!observations.some((row) => row.status !== "disahkan")} onClick={() => onConfirmAll(drafts)}>Semua Parameter Sepadan. Simpan sekarang</Button>
+      </div>
     </div>
   )
 }
