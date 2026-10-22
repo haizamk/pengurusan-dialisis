@@ -5,6 +5,25 @@ import { isSupabaseConfigured, supabaseAnonKey, supabaseUrl } from "@/lib/supaba
 const MODELS = ["openai/gpt-4o", "nvidia/nemotron-3.5-super-vl", "qwen/qwen3-vl-8b-instruct"] as const
 const LIMIT = 3 * 1024 * 1024
 
+type LabEntry = { test: string; value: string; unit: string | null; reference_range: string | null; flag: string | null; page: number | null }
+function parseStructured(raw: string): { entries: LabEntry[]; warning: string | null } {
+  try {
+    const cleaned = raw.trim().replace(/^\x60{3}(?:json)?\s*/i, "").replace(/\s*\x60{3}$/, "")
+    const parsed: unknown = JSON.parse(cleaned)
+    if (!parsed || typeof parsed !== "object" || !("tests" in parsed) || !Array.isArray(parsed.tests)) throw new Error("Invalid schema")
+    if (parsed.tests.length > 100) throw new Error("Too many tests")
+    const entries: LabEntry[] = parsed.tests.map((item: unknown) => {
+      if (!item || typeof item !== "object") throw new Error("Invalid entry")
+      const obj = item as Record<string, unknown>
+      if (typeof obj.test !== "string" || !obj.test.trim() || typeof obj.value !== "string" || !obj.value.trim()) throw new Error("Missing required fields")
+      const optional = (key: string): string | null => obj[key] == null ? null : typeof obj[key] === "string" ? (obj[key] as string).slice(0, 150) : null
+      return { test: obj.test.slice(0, 120), value: obj.value.slice(0, 100), unit: optional("unit"), reference_range: optional("reference_range"), flag: optional("flag"), page: typeof obj.page === "number" && Number.isInteger(obj.page) && obj.page > 0 && obj.page < 100 ? obj.page : null }
+    })
+    return { entries, warning: null }
+  } catch { return { entries: [], warning: "Respons bukan JSON sah. Jangan simpan keputusan." } }
+}
+
+
 export async function POST(request: Request) {
   await connection()
   if (!isSupabaseConfigured()) return NextResponse.json({ error: "Supabase belum dikonfigurasi." }, { status: 503 })
@@ -40,7 +59,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         model,
         messages: [{ role: "user", content: [
-          { type: "text", text: "Ini ialah imej ujian laporan makmal tanpa maklumat peribadi. Transkripsikan hanya teks ujian, nilai, unit dan julat rujukan yang jelas kelihatan. Jangan teka angka yang kabur. Jawab dalam Bahasa Melayu, satu ujian setiap baris. Jika tidak dapat membaca, nyatakan tidak pasti." },
+          { type: "text", text: "Baca hanya keputusan ujian makmal yang kelihatan. Jangan masukkan nama, nombor pengenalan, tarikh lahir, alamat atau maklumat pesakit dalam respons. Jangan teka nilai yang kabur. Pulangkan HANYA JSON sah dengan format {"tests":[{"test":"Haemoglobin","value":"11.4","unit":"g/dL","reference_range":"12.0 - 18.0","flag":"L","page":1}]}. value mesti string supaya perpuluhan kekal. Gunakan null untuk unit, reference_range, flag atau page yang tidak jelas. Jika tiada ujian boleh dibaca, pulangkan {"tests":[]}. Tiada markdown." },
           { type: "image_url", image_url: { url: "data:" + file.type + ";base64," + Buffer.from(bytes).toString("base64"), detail: "high" } },
         ] }],
         max_tokens: 1800,
@@ -53,7 +72,8 @@ export async function POST(request: Request) {
     const result = await upstream.json() as { choices?: Array<{ message?: { content?: string | Array<{ text?: string }> } }>; usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } }
     const value = result.choices?.[0]?.message?.content
     const answer = typeof value === "string" ? value : Array.isArray(value) ? value.map(x => x.text || "").join("\n") : ""
-    return NextResponse.json({ model, ok: Boolean(answer), elapsedMs, answer: answer.slice(0, 12000), usage: result.usage || null }, { headers: { "Cache-Control": "no-store" } })
+    const structured = parseStructured(answer)
+    return NextResponse.json({ model, ok: structured.warning === null && structured.entries.length > 0, elapsedMs, answer: answer.slice(0, 12000), structured: structured.entries, warning: structured.warning, usage: result.usage || null }, { headers: { "Cache-Control": "no-store" } })
   } catch {
     return NextResponse.json({ model, ok: false, elapsedMs: Date.now() - started, error: "Permintaan gagal atau melebihi had masa 45 saat." }, { status: 502 })
   }
