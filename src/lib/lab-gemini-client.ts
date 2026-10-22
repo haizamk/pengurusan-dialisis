@@ -54,13 +54,13 @@ export async function requestLabExtract(
   if (!response.ok) {
     return {
       ok: false,
-      errorCode: typeof body.errorCode === "string" ? body.errorCode : "gemini-gagal",
+      errorCode: typeof body.errorCode === "string" ? body.errorCode : "ekstrak-gagal",
       errorMessage: typeof body.errorMessage === "string" ? body.errorMessage : "Ekstraksi laporan gagal.",
     }
   }
   const validated = validateGeminiPayload(body.payload)
   if (!validated.payload) {
-    return { ok: false, errorCode: "ekstrak-skema", errorMessage: validated.error ?? "Skema Gemini ditolak." }
+    return { ok: false, errorCode: "ekstrak-skema", errorMessage: validated.error ?? "Format keputusan daripada model melalui Nous tidak sah." }
   }
   const mapped = observationsFromGemini(validated.payload)
   if (mapped.report.observations.length === 0) {
