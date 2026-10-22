@@ -75,6 +75,25 @@ test("pelayan menolak fail rosak dan kunci Nous yang tiada", async () => {
   if (!broken.ok) assert.equal(broken.errorCode, "fail-tidak-sah")
 })
 
+test("ralat sesi/Nous tidak jatuh semula ke OCR tempatan", async () => {
+  const pdf = await PDFDocument.create()
+  const page = pdf.addPage()
+  const font = await pdf.embedFont(StandardFonts.Helvetica)
+  page.drawText("Hemoglobin 11.2 g/dL", { x: 50, y: 690, size: 12, font })
+  const bytes = new Uint8Array(await pdf.save())
+  const outcome = await extractReport(bytes, { name: "imbasan.pdf", type: "application/pdf" }, {
+    gemini: async () => ({
+      ok: false,
+      errorCode: "sesi-tidak-ditemui",
+      errorMessage: "Tiada sesi log masuk pesakit pada pelayar.",
+    }),
+  })
+  assert.equal(outcome.observations.length, 0)
+  assert.equal(outcome.diagnostic.stage, "gagal")
+  assert.equal(outcome.diagnostic.errorCode, "sesi-tidak-ditemui")
+  assert.equal(outcome.diagnostic.provider, "Nous Research / OpenAI GPT-4o")
+})
+
 test("ekstraksi hanya memerlukan NOUS_API_KEY", async () => {
   const pdf = await PDFDocument.create()
   const page = pdf.addPage()
