@@ -317,6 +317,21 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
     if (!data || !patientId) return
     const rows = data.observations.filter((row) => row.documentId === document.id && row.status !== "disahkan")
     if (rows.length === 0) { toast.message("Semua bacaan sudah disahkan, atau tiada bacaan untuk disimpan."); return }
+    const missing = rows.flatMap((row) => {
+      const draft = drafts[row.id]
+      const fields = [
+        !draft?.originalName.trim() && "nama ujian",
+        !draft?.value.trim() && "nilai",
+        !draft?.unit.trim() && "unit",
+        !draft?.takenOn && "tarikh ujian",
+        !draft?.standardKey && "parameter standard",
+      ].filter(Boolean)
+      return fields.length ? [`${row.originalName || "Parameter tanpa nama"}: ${fields.join(", ")}`] : []
+    })
+    if (missing.length) {
+      toast.error(`${missing.length} bacaan belum lengkap: ${missing.slice(0, 3).join("; ")}${missing.length > 3 ? "…" : ""}`, { duration: 12000 })
+      return
+    }
     const updatedAt = new Date().toISOString()
     const confirmedRows: LabObservation[] = []
     for (const row of rows) {
@@ -753,6 +768,11 @@ function ReviewCard({
   const [state, setState] = useState(() => ({ signature, drafts: draftsFrom(observations) }))
   if (state.signature !== signature) setState({ signature, drafts: draftsFrom(observations) })
   const drafts = state.drafts
+  const pendingRows = observations.filter((row) => row.status !== "disahkan")
+  const incompleteRows = pendingRows.filter((row) => {
+    const draft = drafts[row.id]
+    return !draft || !draft.originalName.trim() || !draft.value.trim() || !draft.unit.trim() || !draft.takenOn || !draft.standardKey
+  })
   function setDrafts(next: Record<string, ReviewDraft>) {
     setState({ signature, drafts: next })
   }
@@ -799,6 +819,7 @@ function ReviewCard({
         )
       })}
       <div className="flex flex-wrap gap-3">
+        {incompleteRows.length > 0 ? <div role="status" className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm leading-6"><p className="font-semibold">{incompleteRows.length} daripada {pendingRows.length} bacaan belum lengkap untuk simpan semua.</p><p>Buka Edit dan semak nilai, unit, tarikh serta parameter standard untuk: {incompleteRows.slice(0, 8).map((row) => row.originalName || "Parameter tanpa nama").join(", ")}{incompleteRows.length > 8 ? " dan lain-lain" : ""}. Jangan sahkan nilai yang tidak pasti.</p></div> : null}
         <Button type="button" variant="outline" className="!h-12" onClick={onAdd}>Tambah keputusan manual</Button>
         <Button type="button" className="!h-12" onClick={() => onConfirmAll(drafts)}>Semua Parameter Sepadan. Simpan sekarang</Button>
       </div>
