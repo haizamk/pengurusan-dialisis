@@ -728,6 +728,8 @@ function ReviewCard({
               </div>
               <details className="text-sm"><summary className="min-h-10 cursor-pointer text-muted-foreground">Ubah tarikh ujian (jika salah)</summary><Label htmlFor={`${row.id}-tarikh`}>Tarikh ujian</Label><Input id={`${row.id}-tarikh`} className="!h-12" type="date" value={draft.takenOn} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, takenOn: event.target.value } })} /></details>
               {row.refText ? <p className="text-sm text-muted-foreground">Julat tercetak: {row.refText}</p> : null}
+              <label className="flex min-h-12 items-center gap-3 text-sm"><input type="checkbox" className="size-5" checked={draft.accept} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, accept: event.target.checked } })} />Saya telah bandingkan bacaan dengan laporan asal.</label>
+              <Button type="button" className="!h-12 w-fit" onClick={() => onConfirm(row, draft)}>Sahkan bacaan ini</Button>
             </div>
           </details>
         )
