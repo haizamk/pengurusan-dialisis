@@ -47,17 +47,27 @@ export async function extractWithGemini(
   let stage = "penyediaan fail"
   try {
     const images = await documentImages(bytes, kind)
-    stage = "permintaan Nous"
-    const payload = await requestNousVision({ images, key: apiKey })
-    stage = "pengesahan bacaan"
-    const parsed = validateAndMap(payload)
-    if (!parsed) throw new Error("Respons AI tiada bacaan yang dapat disahkan daripada teks sumber.")
-
-    return {
-      ok: true,
-      payload: parsed.payload,
-      extract: { ...parsed.report, model: process.env.NOUS_LAB_MODEL?.trim() || "openai/gpt-4o via Nous", rejected: parsed.rejected },
+    const deadline = Date.now() + 49000
+    const primary = process.env.NOUS_LAB_MODEL?.trim() || "openai/gpt-4o"
+    const fallback = process.env.NOUS_LAB_FALLBACK_MODEL?.trim() || "google/gemini-3.8-flash"
+    let lastError: unknown = null
+    for (const [index, model] of [primary, primary, primary, fallback].entries()) {
+      const remaining = deadline - Date.now()
+      if (remaining < 4000) break
+      try {
+        stage = "permintaan Nous (" + model + ", percubaan " + (index + 1) + "/4)"
+        const payload = await requestNousVision({ images, key: apiKey, model, timeoutMs: Math.min(16000, remaining - 1000) })
+        stage = "pengesahan bacaan (" + model + ")"
+        const parsed = validateAndMap(payload)
+        if (!parsed) throw new Error("Respons AI tiada bacaan yang dapat disahkan daripada teks sumber.")
+        return { ok: true, payload: parsed.payload, extract: { ...parsed.report, model: model + " via Nous", rejected: parsed.rejected } }
+      } catch (error) {
+        lastError = error
+        const message = error instanceof Error ? error.message : String(error)
+        if (/Nous API HTTP (400|401|403|404|413|422)\b/.test(message)) break
+      }
     }
+    throw lastError ?? new Error("Had masa ekstraksi dicapai sebelum semua percubaan selesai.")
   } catch (error) {
     return {
       ok: false,
@@ -92,7 +102,7 @@ function validateAndMap(raw: unknown) {
   return { payload: validated.payload, report: mapped.report, rejected: mapped.rejected }
 }
 
-async function requestNousVision(input: { images: Array<{ mime: string; data: string }>; key: string }) {
+async function requestNousVision(input: { images: Array<{ mime: string; data: string }>; key: string; model: string; timeoutMs: number }) {
   const baseUrl = (process.env.NOUS_API_BASE_URL?.trim() || "https://inference-api.nousresearch.com/v1").replace(/\/$/, "")
   const instructions = GEMINI_EXTRACT_PROMPT + "\n\nPulangkan objek JSON sahaja dengan bentuk tepat: { sampleDate: string|null, dateUncertain: boolean, results: [{ name: string, valueText: string|null, unit: string|null, referenceRange: string|null, abnormalFlag: string|null, visibleText: string, uncertain: boolean, page: number|null }] }. Jangan tambah markdown atau teks di luar JSON. visibleText mesti mengandungi nilai yang sama tepat seperti valueText. Jika ragu, valueText=null dan uncertain=true. Setiap keputusan mesti berpandukan imej laporan sahaja."
   const content: Array<Record<string, unknown>> = [{ type: "text", text: instructions }]
@@ -104,14 +114,14 @@ async function requestNousVision(input: { images: Array<{ mime: string; data: st
     method: "POST",
     headers: { Authorization: "Bearer " + input.key, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: process.env.NOUS_LAB_MODEL?.trim() || "openai/gpt-4o",
+      model: input.model,
       messages: [{ role: "user", content }],
       response_format: { type: "json_object" },
       temperature: 0,
       max_tokens: 12000,
     }),
     // Netlify function budget is 60s; return a controlled failure before platform timeout.
-    signal: AbortSignal.timeout(45000),
+    signal: AbortSignal.timeout(input.timeoutMs),
   })
   if (!response.ok) throw new Error("Nous API HTTP " + response.status + ".")
   const result = await response.json() as { choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }> }
