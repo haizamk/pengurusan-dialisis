@@ -154,12 +154,16 @@ export function observationsFromGemini(payload: GeminiPayload): { report: Parsed
     const unit = item.unit && unitAppearsInText(item.visibleText, item.unit) ? item.unit.replace(/\s+/g, "").replace("μ", "µ").toLowerCase() : null
     if (item.unit && !unit) rejected += 1
     const catalogue = catalogueForName(item.name)
-    const certain = Boolean(item.valueText) && numbers.length === 1 && Boolean(unit) && Boolean(catalogue) && !bounded && !item.uncertain
+    // Preserve an evidence-backed numeric reading as a *pending* draft even when the
+    // parameter is not in our small catalogue or the model marked it uncertain.
+    // Never infer a value from the reference range or a mismatched source snippet.
+    const hasSupportedValue = Boolean(item.valueText) && numbers.length === 1 && Boolean(unit) && !bounded
+    const certain = hasSupportedValue && Boolean(catalogue) && !item.uncertain
     const snippet = item.page ? `Halaman ${item.page}: ${item.visibleText}` : item.visibleText
     observations.push({
       originalName: catalogue && certain ? catalogue.label : item.name,
       standardKey: certain && catalogue ? catalogue.key : null,
-      value: certain ? numbers[0] : null,
+      value: hasSupportedValue ? numbers[0] : null,
       unit,
       refText: item.referenceRange && item.visibleText.includes(item.referenceRange) ? item.referenceRange : null,
       abnormalFlag: certain ? item.abnormalFlag : null,
