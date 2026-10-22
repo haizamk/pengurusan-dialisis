@@ -92,7 +92,7 @@ Keputusan darah (unverified=true bermaksud bacaan AI belum disemak; nyatakan ket
   try {
     // Use the same Nous Research OpenAI-compatible gateway as lab extraction.
     // A Gemini model can be selected via NOUS_ANALYSIS_MODEL only if Nous exposes it.
-    const model = process.env.NOUS_ANALYSIS_MODEL?.trim() || process.env.NOUS_LAB_MODEL?.trim() || "openai/gpt-4o"
+    const model = process.env.NOUS_ANALYSIS_MODEL?.trim() || "google/gemini-3.8-flash"
     const baseUrl = (process.env.NOUS_API_BASE_URL?.trim() || "https://inference-api.nousresearch.com/v1").replace(/\/$/, "")
     const upstream = await fetch(baseUrl + "/chat/completions", {
       method: "POST",
