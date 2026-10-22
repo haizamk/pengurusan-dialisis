@@ -9,7 +9,8 @@ const MODELS = [
   { id: "qwen/qwen3-vl-8b-instruct", label: "Qwen3 VL 8B" },
 ] as const
 
-type Result = { model: string; ok?: boolean; answer?: string; error?: string; httpStatus?: number; elapsedMs?: number; usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null }
+type Entry = { test: string; value: string; unit: string | null; reference_range: string | null; flag: string | null; page: number | null }
+type Result = { structured?: Entry[]; warning?: string | null; model: string; ok?: boolean; answer?: string; error?: string; httpStatus?: number; elapsedMs?: number; usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null }
 
 export default function NousVisionTestPage() {
   const [file, setFile] = useState<File | null>(null)
@@ -45,7 +46,7 @@ export default function NousVisionTestPage() {
   return <main className="mx-auto w-full max-w-5xl space-y-6 p-4 md:p-8">
     <div className="space-y-2">
       <h1 className="text-2xl font-bold">Makmal Ujian Vision Nous</h1>
-      <p className="text-sm text-muted-foreground">Ujian perbandingan tiga model. Tidak menyimpan imej atau keputusan dalam rekod pesakit. Permintaan dihantar kepada Nous Research dan pembekal modelnya.</p>
+      <p className="text-sm text-muted-foreground">Ujian perbandingan JSON tiga model. Tidak menyimpan imej atau keputusan dalam rekod pesakit. Imej asal dihantar kepada Nous Research dan pembekal modelnya — padam maklumat peribadi daripada imej sebelum muat naik.</p>
     </div>
     <section className="space-y-4 rounded-xl border p-5">
       <p className="font-semibold">Muat naik imej laporan contoh</p>
@@ -63,7 +64,9 @@ export default function NousVisionTestPage() {
             <p className="text-sm">{result.ok ? "Respons diterima" : "Ujian gagal"} · {result.elapsedMs == null ? "—" : (result.elapsedMs / 1000).toFixed(1) + " saat"}</p>
             {result.usage && <p className="text-xs text-muted-foreground">Token input: {result.usage.prompt_tokens ?? "—"} · Output: {result.usage.completion_tokens ?? "—"} · Jumlah: {result.usage.total_tokens ?? "—"}</p>}
             {result.error && <p role="alert" className="text-sm">{result.error}{result.httpStatus ? " (HTTP " + result.httpStatus + ")" : ""}</p>}
-            {result.answer && <pre className="whitespace-pre-wrap break-words font-sans text-sm">{result.answer}</pre>}
+            {result.warning && <p role="alert" className="text-sm">{result.warning}</p>}
+            {result.structured && result.structured.length > 0 && <div className="space-y-2">{result.structured.map((entry, i) => <div key={i} className="rounded border p-2 text-sm"><strong>{entry.test}</strong><p>Nilai: {entry.value} {entry.unit || ""}</p><p>Julat: {entry.reference_range || "Tidak pasti"} · Flag: {entry.flag || "—"} · Halaman: {entry.page ?? "Tidak pasti"}</p></div>)}</div>}
+            {result.answer && <details><summary className="cursor-pointer text-sm">Lihat respons asal (untuk audit)</summary><pre className="whitespace-pre-wrap break-words font-mono text-xs">{result.answer}</pre></details>}
           </>}
         </article>
       })}
