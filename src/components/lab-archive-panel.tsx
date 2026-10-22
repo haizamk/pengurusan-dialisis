@@ -196,7 +196,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
       await commit(applyReextraction(current, document.id, draft))
       if (draft.observations.length > 0) {
         setUploadStage("done")
-        toast.success(PATIENT_STATUS.found)
+        toast.success(`✓ ${draft.observations.length} bacaan ekstrak disimpan automatik. Boleh edit bila-bila masa.`, { duration: 6000 })
       } else {
         setUploadStage("error")
         toast.message(PATIENT_STATUS.failed)
@@ -263,7 +263,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
       setUploadStage("saving")
       await commit(applyReextraction(data, document.id, draft))
       setUploadStage(draft.observations.length > 0 ? "done" : "error")
-      if (draft.observations.length > 0) toast.success("Ekstraksi semula selesai. Semak setiap bacaan sebelum mengesahkan.")
+      if (draft.observations.length > 0) toast.success("✓ Bacaan ekstrak dikemas kini dan disimpan. Semakan adalah pilihan.", { duration: 6000 })
       else toast.error("Ekstraksi semula tidak menemui bacaan yang boleh disimpan. Laporan asal kekal; buka Butiran teknikal untuk semak ralat.")
     } catch (error) {
       setUploadStage("error")
@@ -559,7 +559,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
                   ["validating", "Semak jenis dan saiz fail"],
                   ["archiving", "Simpan fail asal ke arkib pesakit"],
                   ["extracting", "Hantar halaman ke GPT-4o melalui Nous"],
-                  ["saving", "Simpan bacaan untuk semakan manual"],
+                  ["saving", "Simpan bacaan secara automatik"],
                 ].map(([stage, label], index) => {
                   const stages = ["validating", "archiving", "extracting", "saving"]
                   const current = stages.indexOf(uploadStage ?? "")
@@ -570,7 +570,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
               </ol>
             </div>
           ) : uploadStage === "done" ? (
-            <div role="status" className="rounded-xl border border-primary/40 bg-primary/10 p-3 text-sm">✓ Bacaan ditemui dan disimpan. Sila semak setiap nilai sebelum mengesahkan.</div>
+            <div role="status" className="rounded-xl border border-primary/40 bg-primary/10 p-3 text-sm">✓ Bacaan ekstrak telah disimpan secara automatik sebagai belum disemak. Kamu boleh membetulkan bacaan pada bila-bila masa.</div>
           ) : uploadStage === "error" ? (
             <div role="status" className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm">Proses belum selesai. Semak mesej pada laporan dan cuba baca semula. Fail asal tidak sepatutnya dianggap sebagai keputusan yang telah disahkan.</div>
           ) : <p className="text-sm leading-6 text-muted-foreground">{PATIENT_STATUS.waiting}</p>}
@@ -803,7 +803,7 @@ function ReviewCard({
               <span className="shrink-0 text-sm font-medium text-primary">Ada maklumat salah / Edit <span aria-hidden="true">⌄</span></span>
             </summary>
             <div className="mt-3 grid gap-3 border-t border-border pt-3">
-              <p className="text-sm text-muted-foreground">Ubah hanya maklumat yang salah. Bandingkan dengan laporan asal sebelum mengesahkan.</p>
+              <p className="text-sm text-muted-foreground">Semakan tidak wajib. Jika mahu mengesahkan atau membetulkan bacaan, bandingkan dengan laporan asal.</p>
               <blockquote className="rounded-lg bg-muted px-3 py-2 text-sm leading-6">{row.snippet}</blockquote>
               <Label htmlFor={`${row.id}-nama`}>Nama pada laporan</Label>
               <Input id={`${row.id}-nama`} className="!h-12" value={draft.originalName} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, originalName: event.target.value } })} />
@@ -825,9 +825,9 @@ function ReviewCard({
         )
       })}
       <div className="flex flex-wrap gap-3">
-        {incompleteRows.length > 0 ? <div role="status" className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm leading-6"><p className="font-semibold">{incompleteRows.length} daripada {pendingRows.length} bacaan belum lengkap untuk simpan semua.</p><p>Buka Edit dan semak nilai, unit, tarikh serta parameter standard untuk: {incompleteRows.slice(0, 8).map((row) => row.originalName || "Parameter tanpa nama").join(", ")}{incompleteRows.length > 8 ? " dan lain-lain" : ""}. Jangan sahkan nilai yang tidak pasti.</p></div> : null}
+        {incompleteRows.length > 0 ? <div role="status" className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm leading-6"><p className="font-semibold">{incompleteRows.length} daripada {pendingRows.length} bacaan belum lengkap untuk pengesahan semua (tidak wajib).</p><p>Buka Edit dan semak nilai, unit, tarikh serta parameter standard untuk: {incompleteRows.slice(0, 8).map((row) => row.originalName || "Parameter tanpa nama").join(", ")}{incompleteRows.length > 8 ? " dan lain-lain" : ""}. Bacaan ekstrak telah disimpan; tidak perlu lengkapkan semuanya sekarang. Jangan sahkan nilai yang tidak pasti.</p></div> : null}
         <Button type="button" variant="outline" className="!h-12" onClick={onAdd}>Tambah keputusan manual</Button>
-        <Button type="button" className="!h-12" onClick={() => onConfirmAll(drafts)}>Semua Parameter Sepadan. Simpan sekarang</Button>
+
       </div>
     </div>
   )
