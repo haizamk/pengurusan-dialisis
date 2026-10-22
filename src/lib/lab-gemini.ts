@@ -2,7 +2,7 @@ import { catalogueForName, parseLabNumber, unitAppearsInText, type ParsedObserva
 
 export const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
 export const GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-2.5-flash"] as const
-export const MAX_GEMINI_FILE_BYTES = 4 * 1024 * 1024
+export const MAX_GEMINI_FILE_BYTES = 20 * 1024 * 1024
 
 export const GEMINI_RESPONSE_SCHEMA = {
   type: "object",
@@ -154,12 +154,19 @@ export function observationsFromGemini(payload: GeminiPayload): { report: Parsed
     const unit = item.unit && unitAppearsInText(item.visibleText, item.unit) ? item.unit.replace(/\s+/g, "").replace("μ", "µ").toLowerCase() : null
     if (item.unit && !unit) rejected += 1
     const catalogue = catalogueForName(item.name)
-    const certain = Boolean(item.valueText) && numbers.length === 1 && Boolean(unit) && Boolean(catalogue) && !bounded && !item.uncertain
+    // Preserve an evidence-backed numeric reading as a *pending* draft even when the
+    // parameter is not in our small catalogue or the model marked it uncertain.
+    // Never infer a value from the reference range or a mismatched source snippet.
+    // A missing unit in the evidence snippet must not erase an otherwise verified
+    // numeric reading. Keep it visible for manual review, but never auto-confirm
+    // or invent a unit. The value itself must still match the visible source text.
+    const hasSupportedValue = Boolean(item.valueText) && numbers.length === 1 && !bounded
+    const certain = hasSupportedValue && Boolean(unit) && Boolean(catalogue) && !item.uncertain
     const snippet = item.page ? `Halaman ${item.page}: ${item.visibleText}` : item.visibleText
     observations.push({
       originalName: catalogue && certain ? catalogue.label : item.name,
       standardKey: certain && catalogue ? catalogue.key : null,
-      value: certain ? numbers[0] : null,
+      value: hasSupportedValue ? numbers[0] : null,
       unit,
       refText: item.referenceRange && item.visibleText.includes(item.referenceRange) ? item.referenceRange : null,
       abnormalFlag: certain ? item.abnormalFlag : null,

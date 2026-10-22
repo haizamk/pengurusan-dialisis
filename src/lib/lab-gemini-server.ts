@@ -1,3 +1,4 @@
+import { getDocumentProxy, renderPageAsImage } from "unpdf"
 import { labFileKind, validateLabFile } from "@/lib/lab-parse"
 import {
   GEMINI_EXTRACT_PROMPT,
@@ -20,9 +21,13 @@ function bytesToBase64(bytes: Uint8Array) {
   return Buffer.from(bytes).toString("base64")
 }
 
+async function nodeCanvas() {
+  return import("@napi-rs/canvas")
+}
+
+// Compatibility shim: provider is Nous Research, model is OpenAI GPT-4o hosted through Nous.
 export function geminiApiKey() {
-  // Kept as a compatibility shim for existing callers; Gemini is no longer used.
-  return ""
+  return process.env.NOUS_API_KEY?.trim() || ""
 }
 
 export async function extractWithGemini(
@@ -34,80 +39,96 @@ export async function extractWithGemini(
   const kind = labFileKind(file, bytes)
   if (!kind) return { ok: false, errorCode: "fail-tidak-sah", errorMessage: "Kandungan fail tidak sepadan dengan PDF, JPG atau PNG." }
 
-  const mistralKey = process.env.MISTRAL_API_KEY?.trim() || ""
-  const nousKey = process.env.NOUS_API_KEY?.trim() || ""
-  if (!mistralKey || !nousKey) {
-    const missing = [!mistralKey ? "MISTRAL_API_KEY" : "", !nousKey ? "NOUS_API_KEY" : ""].filter(Boolean).join(" dan ")
-    return { ok: false, errorCode: "tiada-enjin", errorMessage: "Tetapkan " + missing + " pada pelayan Netlify. Laluan ekstraksi hanya menggunakan Mistral OCR dan Nous Research." }
+  const apiKey = process.env.NOUS_API_KEY?.trim() || ""
+  if (!apiKey) {
+    return { ok: false, errorCode: "tiada-enjin", errorMessage: "Tetapkan NOUS_API_KEY pada pelayan Netlify. Ekstraksi menggunakan model OpenAI GPT-4o melalui Nous Research." }
   }
 
+  let stage = "penyediaan fail"
   try {
-    // Mistral is the only OCR provider. Nous Research is the only model used to structure OCR text.
-    const ocrText = await requestMistralOcr({ bytes, mime: kind === "pdf" ? "application/pdf" : kind === "png" ? "image/png" : "image/jpeg", key: mistralKey })
-    if (!ocrText.trim()) throw new Error("Mistral OCR tidak menemui teks pada laporan.")
-
-    const structuredText = await requestNousText({ text: ocrText, key: nousKey })
-    const parsed = validateAndMap(structuredText)
-    if (!parsed) throw new Error("Nous tidak menghasilkan struktur keputusan makmal yang sah.")
-
-    return {
-      ok: true,
-      payload: parsed.payload,
-      extract: { ...parsed.report, model: "mistral-ocr-latest + nous", rejected: parsed.rejected },
+    const images = await documentImages(bytes, kind)
+    const deadline = Date.now() + 49000
+    const primary = process.env.NOUS_LAB_MODEL?.trim() || "openai/gpt-4o"
+    const fallback = process.env.NOUS_LAB_FALLBACK_MODEL?.trim() || "google/gemini-3.8-flash"
+    let lastError: unknown = null
+    for (const [index, model] of [primary, primary, primary, fallback].entries()) {
+      const remaining = deadline - Date.now()
+      if (remaining < 4000) break
+      try {
+        stage = "permintaan Nous (" + model + ", percubaan " + (index + 1) + "/4)"
+        const payload = await requestNousVision({ images, key: apiKey, model, timeoutMs: Math.min(16000, remaining - 1000) })
+        stage = "pengesahan bacaan (" + model + ")"
+        const parsed = validateAndMap(payload)
+        if (!parsed) throw new Error("Respons AI tiada bacaan yang dapat disahkan daripada teks sumber.")
+        return { ok: true, payload: parsed.payload, extract: { ...parsed.report, model: model + " via Nous", rejected: parsed.rejected } }
+      } catch (error) {
+        lastError = error
+        const message = error instanceof Error ? error.message : String(error)
+        if (/Nous API HTTP (400|401|403|404|413|422)\b/.test(message)) break
+      }
     }
+    throw lastError ?? new Error("Had masa ekstraksi dicapai sebelum semua percubaan selesai.")
   } catch (error) {
     return {
       ok: false,
       errorCode: "ekstrak-gagal",
-      errorMessage: sanitiseError(error) + ". Laluan ini hanya menggunakan Mistral OCR dan Nous Research. Semak keputusan secara manual; tiada nilai dibetulkan secara automatik.",
+      errorMessage: "Gagal pada peringkat " + stage + ": " + sanitiseError(error) + ". Rekod lama tidak diubah.",
     }
   }
 }
 
-function validateAndMap(text: string) {
-  let parsed: unknown
-  try { parsed = JSON.parse(text) } catch { return null }
-  const validated = validateGeminiPayload(parsed)
+async function documentImages(bytes: Uint8Array, kind: "pdf" | "png" | "jpeg") {
+  if (kind !== "pdf") {
+    return [{ mime: kind === "png" ? "image/png" : "image/jpeg", data: bytesToBase64(bytes) }]
+  }
+  const pdf = await getDocumentProxy(new Uint8Array(bytes))
+  const pageCount = Math.min(pdf.numPages, 10)
+  if (pdf.numPages > 10) throw new Error("PDF melebihi had 10 halaman untuk ekstraksi visual. Muat naik bahagian laporan yang berkaitan.")
+  const images: Array<{ mime: string; data: string }> = []
+  for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+    // Reduce rendering cost for multi-page scanned PDFs within serverless execution limits.
+    const options: { scale: number; canvasImport?: () => Promise<unknown> } = { scale: 1.5, canvasImport: nodeCanvas }
+    const rendered = await renderPageAsImage(new Uint8Array(bytes), pageNumber, options as never)
+    images.push({ mime: "image/png", data: bytesToBase64(new Uint8Array(rendered)) })
+  }
+  return images
+}
+
+function validateAndMap(raw: unknown) {
+  const validated = validateGeminiPayload(raw)
   if (!validated.payload) return null
   const mapped = observationsFromGemini(validated.payload)
   if (mapped.report.observations.length === 0) return null
   return { payload: validated.payload, report: mapped.report, rejected: mapped.rejected }
 }
 
-async function requestMistralOcr(input: { bytes: Uint8Array; mime: string; key: string }) {
-  const base64 = bytesToBase64(input.bytes)
-  const isPdf = input.mime === "application/pdf"
-  const document = isPdf
-    ? { type: "document_url", document_url: "data:application/pdf;base64," + base64 }
-    : { type: "image_url", image_url: "data:" + input.mime + ";base64," + base64 }
-  const response = await fetch("https://api.mistral.ai/v1/ocr", {
-    method: "POST",
-    headers: { Authorization: "Bearer " + input.key, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "mistral-ocr-latest", document, table_format: "markdown", include_blocks: true }),
-    signal: AbortSignal.timeout(45000),
-  })
-  if (!response.ok) throw new Error("Mistral OCR HTTP " + response.status + ".")
-  const result = await response.json() as { pages?: Array<{ markdown?: string }> }
-  return (result.pages ?? []).map((page, index) => "Halaman " + (index + 1) + ":\n" + (page.markdown ?? "")).join("\n\n").slice(0, 120000)
-}
-
-async function requestNousText(input: { text: string; key: string }) {
+async function requestNousVision(input: { images: Array<{ mime: string; data: string }>; key: string; model: string; timeoutMs: number }) {
   const baseUrl = (process.env.NOUS_API_BASE_URL?.trim() || "https://inference-api.nousresearch.com/v1").replace(/\/$/, "")
+  const instructions = GEMINI_EXTRACT_PROMPT + "\n\nPulangkan objek JSON sahaja dengan bentuk tepat: { sampleDate: string|null, dateUncertain: boolean, results: [{ name: string, valueText: string|null, unit: string|null, referenceRange: string|null, abnormalFlag: string|null, visibleText: string, uncertain: boolean, page: number|null }] }. Jangan tambah markdown atau teks di luar JSON. visibleText mesti mengandungi nilai yang sama tepat seperti valueText. Jika ragu, valueText=null dan uncertain=true. Setiap keputusan mesti berpandukan imej laporan sahaja."
+  const content: Array<Record<string, unknown>> = [{ type: "text", text: instructions }]
+  for (const [index, image] of input.images.entries()) {
+    content.push({ type: "text", text: "Halaman " + (index + 1) })
+    content.push({ type: "image_url", image_url: { url: "data:" + image.mime + ";base64," + image.data, detail: "high" } })
+  }
   const response = await fetch(baseUrl + "/chat/completions", {
     method: "POST",
     headers: { Authorization: "Bearer " + input.key, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: process.env.NOUS_LAB_MODEL?.trim() || "Hermes-4-70B",
-      messages: [{ role: "user", content: GEMINI_EXTRACT_PROMPT + "\n\nTEKS OCR (sumber sahaja, jangan tambah maklumat):\n" + input.text }],
+      model: input.model,
+      messages: [{ role: "user", content }],
       response_format: { type: "json_object" },
       temperature: 0,
+      max_tokens: 12000,
     }),
-    signal: AbortSignal.timeout(60000),
+    // Netlify function budget is 60s; return a controlled failure before platform timeout.
+    signal: AbortSignal.timeout(input.timeoutMs),
   })
-  if (!response.ok) throw new Error("Nous Research API HTTP " + response.status + ".")
+  if (!response.ok) throw new Error("Nous API HTTP " + response.status + ".")
   const result = await response.json() as { choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }> }
-  const content = result.choices?.[0]?.message?.content
-  const text = typeof content === "string" ? content.trim() : Array.isArray(content) ? content.map(part => part.text || "").join("\n").trim() : ""
-  if (!text) throw new Error("Nous tidak memulangkan struktur keputusan.")
-  return text
+  const output = result.choices?.[0]?.message?.content
+  const text = typeof output === "string" ? output.trim() : Array.isArray(output) ? output.map(part => part.text || "").join("\n").trim() : ""
+  if (!text) throw new Error("Nous tidak memulangkan teks keputusan.")
+  let parsed: unknown
+  try { parsed = JSON.parse(text) } catch { throw new Error("Balasan model melalui Nous bukan JSON yang sah.") }
+  return parsed
 }

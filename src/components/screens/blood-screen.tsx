@@ -54,17 +54,19 @@ export function BloodScreen() {
         <LabArchivePanel sections={["upload", "history"]} />
       </section>
 
-      <section className="space-y-3">
-        <div className="flex items-center gap-3">
-          <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><Droplets className="size-5" /></span>
-          <div><h2 className="font-heading text-xl">Rekod manual</h2><p className="mt-1 text-sm text-muted-foreground">Tambah atau kemas kini bacaan yang sudah diperiksa.</p></div>
-        </div>
-        <LabEditor
-          key={`${presetPatientId ?? ""}-${editingId ?? presetLabId ?? "baru"}`}
-          presetPatientId={presetPatientId}
-          presetLabId={editingId ?? presetLabId}
-        />
-      </section>
+      {editingId ? (
+        <section className="space-y-3" id="edit-rekod-darah">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-heading text-xl">Ubah rekod tersimpan</h2>
+            <Button variant="outline" size="sm" onClick={() => setEditingId(undefined)}>Tutup</Button>
+          </div>
+          <LabEditor
+            key={editingId}
+            presetPatientId={presetPatientId}
+            presetLabId={editingId}
+          />
+        </section>
+      ) : null}
 
       <section className="space-y-4 rounded-3xl border border-border/80 bg-card p-4 shadow-sm sm:p-6">
         <div className="flex items-center justify-between gap-3">
@@ -82,7 +84,7 @@ export function BloodScreen() {
 
         {rows.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-border bg-card/50 p-6 text-center">
-            <Droplets className="mx-auto size-7 text-primary" /><p className="mt-2 font-semibold">Belum ada bacaan darah</p><p className="mt-1 text-sm text-muted-foreground">Rekod manual atau keputusan disahkan akan muncul di sini.</p>
+            <Droplets className="mx-auto size-7 text-primary" /><p className="mt-2 font-semibold">Belum ada bacaan darah</p><p className="mt-1 text-sm text-muted-foreground">Keputusan yang disahkan akan muncul di sini.</p>
           </div>
         ) : (
           <div className="grid gap-3 xl:grid-cols-2">
@@ -97,7 +99,7 @@ export function BloodScreen() {
                       <p className="mt-1 inline-flex items-center gap-1.5 text-sm text-muted-foreground"><CalendarDays className="size-3.5" /> {formatDate(lab.takenOn)}</p>
                     </div>
                     <div className="flex shrink-0 gap-2">
-                      <Button variant="outline" size="sm" className="h-10 rounded-xl" onClick={() => setEditingId(lab.id)}><Pencil className="mr-1.5 size-3.5" /> Ubah</Button>
+                      <Button variant="outline" size="sm" className="h-10 rounded-xl" onClick={() => { setEditingId(lab.id); window.setTimeout(() => document.getElementById("edit-rekod-darah")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0) }}><Pencil className="mr-1.5 size-3.5" /> Ubah</Button>
                       <Button variant="ghost" size="sm" className="h-10 rounded-xl text-destructive hover:text-destructive" onClick={() => deleteLab(lab.id)}><Trash2 className="mr-1.5 size-3.5" /> Padam</Button>
                     </div>
                   </div>

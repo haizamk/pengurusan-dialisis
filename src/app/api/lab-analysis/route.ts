@@ -1,7 +1,4 @@
 import { createClient } from "@supabase/supabase-js"
-import { GoogleGenAI } from "@google/genai"
-import { geminiApiKey } from "@/lib/lab-gemini-server"
-import { selectedGeminiModel } from "@/lib/lab-gemini"
 import { isSupabaseConfigured, supabaseAnonKey, supabaseUrl } from "@/lib/supabase"
 
 export const maxDuration = 60
@@ -52,8 +49,8 @@ export async function POST(request: Request) {
   if (!await authorised(request)) {
     return Response.json({ error: "Sesi pesakit yang diluluskan diperlukan." }, { status: 401 })
   }
-  const key = geminiApiKey()
-  if (!key) return Response.json({ error: "GEMINI_API_KEY belum ditetapkan pada pelayan." }, { status: 503 })
+  const key = process.env.NOUS_API_KEY?.trim()
+  if (!key) return Response.json({ error: "NOUS_API_KEY belum ditetapkan pada pelayan." }, { status: 503 })
 
   let body: unknown
   try {
@@ -63,7 +60,7 @@ export async function POST(request: Request) {
   }
   const raw = body && typeof body === "object" ? (body as { results?: unknown }).results : null
   if (!Array.isArray(raw) || raw.length === 0 || raw.length > 200) {
-    return Response.json({ error: "Hantar antara 1 hingga 200 keputusan yang telah disahkan." }, { status: 400 })
+    return Response.json({ error: "Hantar antara 1 hingga 200 keputusan darah." }, { status: 400 })
   }
   const results = raw.flatMap((item) => {
     if (!item || typeof item !== "object") return []
@@ -82,6 +79,7 @@ export async function POST(request: Request) {
       date: row.date,
       referenceRange: typeof row.referenceRange === "string" ? row.referenceRange.slice(0, 80) : null,
       abnormalFlag: typeof row.abnormalFlag === "string" ? row.abnormalFlag.slice(0, 20) : null,
+      unverified: row.unverified === true,
     }]
   })
   if (results.length !== raw.length) {
@@ -89,18 +87,39 @@ export async function POST(request: Request) {
   }
 
   const prompt = `Anda pembantu pendidikan kesihatan untuk pesakit hemodialisis. Tafsir hanya keputusan yang diberi di bawah. Pulangkan satu item parameter bagi SETIAP keputusan input, tanpa menggugurkan atau menambah parameter. Kekalkan nilai, unit dan tarikh tepat. Gunakan julat rujukan atau tanda H/L tercetak jika ada; jika tiada, status mestilah tidak_dapat_dipastikan dan jangan mendakwa nilai tinggi/rendah berdasarkan andaian. Terangkan maksud dengan bahasa Melayu mudah. Beri tip pemakanan hanya jika relevan kepada parameter dan keputusan; untuk kalium/fosfat tinggi, beri tip umum yang selamat untuk dibincang dengan pakar diet renal, jangan melarang semua buah/sayur/protein atau menetapkan had individu. Jangan diagnosis, ubah ubat, pengikat fosfat, suplemen, cecair atau preskripsi dialisis. Jika nilai berbahaya berdasarkan konteks input, sarankan hubungi pasukan dialisis segera tanpa membuat diagnosis. Jika julat rujukan tiada, nyatakan perlunya rujuk julat makmal dan pasukan rawatan. Jangan cipta fakta atau nilai.
-Keputusan disahkan: ${JSON.stringify(results)}`
+Keputusan darah (unverified=true bermaksud bacaan AI belum disemak; nyatakan ketidakpastian dan jangan beri arahan pemakanan khusus berdasarkan bacaan tersebut): ${JSON.stringify(results)}`
 
   try {
-    const ai = new GoogleGenAI({ apiKey: key })
-    const response = await ai.models.generateContent({
-      model: selectedGeminiModel(),
-      contents: [{ text: prompt }],
-      config: { responseMimeType: "application/json", responseJsonSchema: schema },
+    // Use the same Nous Research OpenAI-compatible gateway as lab extraction.
+    // A Gemini model can be selected via NOUS_ANALYSIS_MODEL only if Nous exposes it.
+    const model = process.env.NOUS_ANALYSIS_MODEL?.trim() || "google/gemini-3.8-flash"
+    const baseUrl = (process.env.NOUS_API_BASE_URL?.trim() || "https://inference-api.nousresearch.com/v1").replace(/\/$/, "")
+    const upstream = await fetch(baseUrl + "/chat/completions", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: "Balas dengan objek JSON sahaja tanpa markdown. Kunci wajib: summary (string), safety (array string), parameters (array objek). Setiap parameter wajib ada key,label,value,unit,date,status,interpretation,foodTips,followUp. Status: tinggi, rendah, dalam_julat, tidak_dapat_dipastikan." },
+          { role: "user", content: prompt },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0,
+        max_tokens: 12000,
+      }),
+      signal: AbortSignal.timeout(55000),
     })
-    const text = response.text?.trim()
-    if (!text) return Response.json({ error: "AI tidak memulangkan analisis. Cuba semula." }, { status: 502 })
-    const parsed = JSON.parse(text) as { summary?: unknown; parameters?: unknown; safety?: unknown }
+    if (!upstream.ok) {
+      return Response.json({ error: "Nous Research tidak dapat menjana analisis (HTTP " + upstream.status + "). Semak model NOUS_ANALYSIS_MODEL." }, { status: 502 })
+    }
+    const upstreamJson = await upstream.json() as { choices?: Array<{ message?: { content?: string | Array<{ text?: string }> } }> }
+    const output = upstreamJson.choices?.[0]?.message?.content
+    const answer = typeof output === "string" ? output : Array.isArray(output) ? output.map((part) => part.text || "").join("\n") : ""
+    if (!answer.trim()) return Response.json({ error: "Nous tidak memulangkan analisis. Cuba semula." }, { status: 502 })
+    let parsed: { summary?: unknown; parameters?: unknown; safety?: unknown }
+    try { parsed = JSON.parse(answer) } catch {
+      return Response.json({ error: "Nous memulangkan format JSON yang tidak sah. Tiada analisis disimpan." }, { status: 502 })
+    }
     if (typeof parsed.summary !== "string" || !Array.isArray(parsed.parameters) || !Array.isArray(parsed.safety)) {
       return Response.json({ error: "Format analisis AI tidak lengkap." }, { status: 502 })
     }
@@ -115,7 +134,7 @@ Keputusan disahkan: ${JSON.stringify(results)}`
       return Response.json({ error: "Analisis AI tidak meliputi semua keputusan. Tiada analisis separa disimpan; cuba semula." }, { status: 502 })
     }
     return Response.json({
-      version: "gemini-lab-analysis-v1",
+      version: "nous-lab-analysis-v1",
       summary: parsed.summary.slice(0, 4000),
       safety: parsed.safety.filter((item): item is string => typeof item === "string").slice(0, 20),
       parameters,

@@ -13,6 +13,7 @@ import {
   fromBloodRecords,
   mergeConfirmed,
   observationsToConfirmed,
+  observationsToAnalysis,
   parameterSeries,
   safetyMessages,
   type ConfirmedResult,
@@ -62,6 +63,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
   const [uploadStage, setUploadStage] = useState<"validating" | "archiving" | "extracting" | "saving" | "done" | "error" | null>(null)
   const [analysisStage, setAnalysisStage] = useState<"session" | "sending" | "analysing" | "saving" | null>(null)
   const [analysing, setAnalysing] = useState(false)
+  const [saveFeedback, setSaveFeedback] = useState<{ rowId: string; message: string; ok: boolean } | null>(null)
   const [parameter, setParameter] = useState("all")
   const [range, setRange] = useState<"3m" | "6m" | "12m" | "all">("all")
   const [today, setToday] = useState("")
@@ -97,7 +99,17 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
     })))
     return mergeConfirmed(extracted, fromBloodRecords(ownLabs))
   }, [data, ownLabs])
-  const live = useMemo(() => buildLabAnalysis(confirmed, ""), [confirmed])
+  const analysisReadings = useMemo(() => {
+    if (!data) return confirmed
+    const provisional = observationsToAnalysis(data.observations.map((row) => ({
+      ...row,
+      label: row.originalName,
+      source: row.source === "pesakit" ? "manual" as const : "disahkan" as const,
+    })))
+    return mergeConfirmed(provisional, fromBloodRecords(ownLabs))
+  }, [data, ownLabs, confirmed])
+  const provisionalCount = analysisReadings.filter((row) => row.source === "belum_disemak").length
+  const live = useMemo(() => buildLabAnalysis(analysisReadings, ""), [analysisReadings])
   const urgent = safetyMessages(confirmed)
 
   if (blocked) {
@@ -109,7 +121,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
     if (!patientId) return
     setData(next)
     const note = await savePatientArchive(patientId, next)
-    if (note) setCloudNote(note)
+    if (note) { setCloudNote(note); throw new Error(note) }
   }
 
   async function upload(file: File, allowDuplicate: boolean) {
@@ -196,7 +208,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
       await commit(applyReextraction(current, document.id, draft))
       if (draft.observations.length > 0) {
         setUploadStage("done")
-        toast.success(PATIENT_STATUS.found)
+        toast.success(`✓ ${draft.observations.length} bacaan ekstrak disimpan automatik. Boleh edit bila-bila masa.`, { duration: 6000 })
       } else {
         setUploadStage("error")
         toast.message(PATIENT_STATUS.failed)
@@ -214,14 +226,36 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
     if (!data || !patientId || readingRef.current) return
     readingRef.current = true
     setReading(true)
+    setActiveId(document.id)
+    setUploadStage("extracting")
+    toast.message("Membaca semula laporan asal. Tunggu sehingga ekstraksi selesai.")
     try {
       const blob = await openLabDocument(document)
       if (!blob) {
+        setUploadStage("error")
         toast.error("Fail asal tidak dijumpai. Laporan yang dimuat naik tidak dipadam.")
         return
       }
       const bytes = new Uint8Array(await blob.arrayBuffer())
       const outcome = await extractReport(bytes, { name: document.fileName, type: document.mime || "application/pdf" })
+      if (outcome.observations.length === 0) {
+        const failedDocument = {
+          ...document,
+          note: outcome.diagnostic.errorMessage
+            ? `Ekstraksi semula gagal: ${outcome.diagnostic.errorMessage}`
+            : PATIENT_STATUS.failed,
+          extractionStatus: "gagal" as const,
+          processingStatus: "selesai" as const,
+          diagnostic: { ...outcome.diagnostic, documentId: document.id },
+        }
+        await commit({
+          ...data,
+          documents: data.documents.map((item) => item.id === document.id ? failedDocument : item),
+        })
+        setUploadStage("error")
+        toast.error("Ekstraksi AI gagal atau tiada bacaan sah. Bacaan lama dikekalkan; semak butiran teknikal atau cuba lagi.")
+        return
+      }
       const draft = draftFromText({
         id: document.id,
         patientId,
@@ -238,9 +272,14 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
         reportDate: outcome.reportDate,
         dateUncertain: outcome.dateUncertain,
       })
+      setUploadStage("saving")
       await commit(applyReextraction(data, document.id, draft))
-      if (draft.observations.length > 0) toast.success(PATIENT_STATUS.found)
-      else toast.message(PATIENT_STATUS.failed)
+      setUploadStage(draft.observations.length > 0 ? "done" : "error")
+      if (draft.observations.length > 0) toast.success("✓ Bacaan ekstrak dikemas kini dan disimpan. Semakan adalah pilihan.", { duration: 6000 })
+      else toast.error("Ekstraksi semula tidak menemui bacaan yang boleh disimpan. Laporan asal kekal; buka Butiran teknikal untuk semak ralat.")
+    } catch (error) {
+      setUploadStage("error")
+      toast.error(error instanceof Error ? `Ekstraksi semula gagal: ${error.message}` : "Ekstraksi semula gagal. Laporan asal kekal.")
     } finally {
       readingRef.current = false
       setReading(false)
@@ -249,11 +288,14 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
 
   async function confirmRow(row: LabObservation, draft: ReviewDraft) {
     if (!data || !patientId) return
+    setSaveFeedback(null)
     if (!draft.accept) {
+      setSaveFeedback({ rowId: row.id, ok: false, message: "Tandakan kotak semakan laporan asal sebelum mengesahkan bacaan." })
       toast.error("Tandakan bahawa anda telah menyemak nilai pada laporan.")
       return
     }
     if (draft.value.trim() === "") {
+      setSaveFeedback({ rowId: row.id, ok: false, message: "Isi nilai bacaan dahulu." })
       toast.error("Nilai kosong tidak disimpan, termasuk sebagai sifar.")
       return
     }
@@ -269,6 +311,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
       updatedAt,
     })
     if ("error" in result) {
+      setSaveFeedback({ rowId: row.id, ok: false, message: result.error })
       toast.error(result.error)
       return
     }
@@ -281,9 +324,70 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
     const audit = auditChange(row, result.row, updatedAt)
     const observations = data.observations.map((item) => (item.id === row.id ? result.row : item))
     const documents = data.documents.map((item) => item.id === row.documentId ? { ...item, reviewStatus: documentStatus(observations, item.id) } : item)
-    await commit({ ...data, documents, observations, audits: audit ? [...data.audits, audit] : data.audits })
-    await mirrorBloodRecord(result.row, documents.find((item) => item.id === row.documentId)?.fileName ?? "laporan")
-    toast.success("Keputusan disahkan dan disimpan.")
+    const notification = toast.loading("Sedang menyimpan bacaan…")
+    try {
+      await commit({ ...data, documents, observations, audits: audit ? [...data.audits, audit] : data.audits })
+      await mirrorBloodRecord(result.row, documents.find((item) => item.id === row.documentId)?.fileName ?? "laporan")
+      setSaveFeedback({ rowId: row.id, ok: true, message: "✓ Berjaya disimpan dalam Rekod Darah." })
+      toast.success("✓ Berjaya disimpan dalam Rekod Darah.", { id: notification, duration: 6000 })
+    } catch (error) {
+      const message = error instanceof Error ? `Tidak berjaya disimpan: ${error.message}` : "Tidak berjaya disimpan."
+      setSaveFeedback({ rowId: row.id, ok: false, message })
+      toast.error(message, { id: notification, duration: 8000 })
+    }
+  }
+
+  async function confirmAll(document: LabDocument, drafts: Record<string, ReviewDraft>) {
+    if (!data || !patientId) return
+    const rows = data.observations.filter((row) => row.documentId === document.id && row.status !== "disahkan")
+    if (rows.length === 0) { toast.message("Semua bacaan sudah disahkan, atau tiada bacaan untuk disimpan."); return }
+    const missing = rows.flatMap((row) => {
+      const draft = drafts[row.id]
+      const fields = [
+        !draft?.originalName.trim() && "nama ujian",
+        !draft?.value.trim() && "nilai",
+        !draft?.unit.trim() && "unit",
+        !draft?.takenOn && "tarikh ujian",
+        !draft?.standardKey && "parameter standard",
+      ].filter(Boolean)
+      return fields.length ? [`${row.originalName || "Parameter tanpa nama"}: ${fields.join(", ")}`] : []
+    })
+    if (missing.length) {
+      toast.error(`${missing.length} bacaan belum lengkap: ${missing.slice(0, 3).join("; ")}${missing.length > 3 ? "…" : ""}`, { duration: 12000 })
+      return
+    }
+    const updatedAt = new Date().toISOString()
+    const confirmedRows: LabObservation[] = []
+    for (const row of rows) {
+      const draft = drafts[row.id]
+      if (!draft || !draft.value.trim() || !draft.unit.trim() || !draft.takenOn || !draft.standardKey) {
+        toast.error(`Bacaan ${row.originalName} belum lengkap. Semak atau edit dahulu.`)
+        return
+      }
+      const result = applyConfirmation(row, {
+        value: Number(draft.value.replace(",", ".")), unit: draft.unit,
+        takenOn: draft.takenOn, standardKey: draft.standardKey,
+        originalName: draft.originalName, acceptUnclear: true, updatedAt,
+      })
+      if ("error" in result) { toast.error(`${row.originalName}: ${result.error}`); return }
+      confirmedRows.push(result.row)
+    }
+    const existing = data.observations.filter((row) => !rows.some((candidate) => candidate.id === row.id))
+    const { skipped } = withoutDuplicateConfirmed(existing, confirmedRows)
+    if (skipped.length > 0) { toast.error("Terdapat keputusan pendua. Semak setiap bacaan sebelum menyimpan."); return }
+    if (!window.confirm(`Saya telah membandingkan semua ${rows.length} bacaan dengan laporan asal dan mengesahkan semuanya betul. Simpan sekarang?`)) return
+    const byId = new Map(confirmedRows.map((row) => [row.id, row]))
+    const observations = data.observations.map((row) => byId.get(row.id) ?? row)
+    const documents = data.documents.map((item) => item.id === document.id ? { ...item, reviewStatus: documentStatus(observations, item.id) } : item)
+    const audits = rows.map((row) => auditChange(row, byId.get(row.id)!, updatedAt)).filter((audit): audit is NonNullable<typeof audit> => audit != null)
+    const notification = toast.loading("Sedang menyimpan semua bacaan…")
+    try {
+      await commit({ ...data, documents, observations, audits: [...data.audits, ...audits] })
+      for (const row of confirmedRows) await mirrorBloodRecord(row, document.fileName)
+      toast.success(`✓ ${confirmedRows.length} bacaan berjaya disimpan dalam Rekod Darah.`, { id: notification, duration: 6000 })
+    } catch (error) {
+      toast.error(error instanceof Error ? `Tidak berjaya disimpan: ${error.message}` : "Gagal menyimpan semua bacaan.", { id: notification, duration: 8000 })
+    }
   }
 
   async function mirrorBloodRecord(row: LabObservation, fileName: string) {
@@ -313,6 +417,24 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
     await saveLab(next, existing ? "update" : "insert")
   }
 
+  async function deleteManual(row: LabObservation) {
+    if (!data || !patientId || row.patientId !== patientId || row.source !== "pesakit" || row.status === "disahkan") {
+      toast.error("Hanya parameter manual yang belum disahkan boleh dipadam.")
+      return
+    }
+    if (!window.confirm(`Padam parameter manual "${row.originalName || "Parameter tanpa nama"}"? Tindakan ini tidak boleh dibatalkan.`)) return
+    const observations = data.observations.filter((item) => item.id !== row.id)
+    const documents = data.documents.map((item) => item.id === row.documentId ? { ...item, reviewStatus: documentStatus(observations, item.id) } : item)
+    const note = await savePatientArchive(patientId, { ...data, observations, documents })
+    if (note) {
+      setCloudNote(note)
+      toast.error("Parameter tidak dapat dipadam sepenuhnya dari storan awan. Sila cuba lagi.")
+      return
+    }
+    setData({ ...data, observations, documents })
+    toast.success("Parameter manual telah dipadam.")
+  }
+
   async function addManual(documentId: string | null) {
     if (!data || !patientId) return
     const now = new Date().toISOString()
@@ -339,7 +461,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
   }
 
   async function saveAnalysis() {
-    if (!data || !patientId || confirmed.length === 0 || analysing) return
+    if (!data || !patientId || analysisReadings.length === 0 || analysing) return
     setAnalysing(true)
     setAnalysisStage("session")
     try {
@@ -355,13 +477,14 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          results: confirmed.map((item) => ({
+          results: analysisReadings.map((item) => ({
             key: item.standardKey,
             label: item.label,
             date: item.takenOn,
             value: item.value,
             unit: item.unit,
             referenceRange: item.refText,
+            unverified: item.source === "belum_disemak",
           })),
         }),
       })
@@ -391,7 +514,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
         body: result,
       }
       await commit({ ...data, analyses: [stored, ...data.analyses] })
-      toast.success("Analisis AI bagi semua keputusan berjaya disimpan.")
+      toast.success("✓ Analisis baharu berjaya disimpan berdasarkan bacaan terkini.")
     } catch {
       toast.error("Tidak dapat menjana analisis AI. Rekod asal kekal selamat.")
     } finally {
@@ -455,8 +578,8 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
                 {[
                   ["validating", "Semak jenis dan saiz fail"],
                   ["archiving", "Simpan fail asal ke arkib pesakit"],
-                  ["extracting", "Ekstrak teks dengan Gemini / PDF / OCR"],
-                  ["saving", "Simpan bacaan untuk semakan manual"],
+                  ["extracting", "Hantar halaman ke GPT-4o melalui Nous"],
+                  ["saving", "Simpan bacaan secara automatik"],
                 ].map(([stage, label], index) => {
                   const stages = ["validating", "archiving", "extracting", "saving"]
                   const current = stages.indexOf(uploadStage ?? "")
@@ -467,7 +590,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
               </ol>
             </div>
           ) : uploadStage === "done" ? (
-            <div role="status" className="rounded-xl border border-primary/40 bg-primary/10 p-3 text-sm">✓ Bacaan ditemui dan disimpan. Sila semak setiap nilai sebelum mengesahkan.</div>
+            <div role="status" className="rounded-xl border border-primary/40 bg-primary/10 p-3 text-sm">✓ Bacaan ekstrak telah disimpan secara automatik sebagai belum disemak. Kamu boleh membetulkan bacaan pada bila-bila masa.</div>
           ) : uploadStage === "error" ? (
             <div role="status" className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm">Proses belum selesai. Semak mesej pada laporan dan cuba baca semula. Fail asal tidak sepatutnya dianggap sebagai keputusan yang telah disahkan.</div>
           ) : <p className="text-sm leading-6 text-muted-foreground">{PATIENT_STATUS.waiting}</p>}
@@ -506,7 +629,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button type="button" variant="outline" className="!h-12" onClick={() => void openDocument(document)}>Buka fail</Button>
-                    <Button type="button" variant="outline" className="!h-12" disabled={reading} onClick={() => void reread(document)}>Cuba baca semula</Button>
+                    <Button type="button" variant="outline" className="!h-12" disabled={reading} onClick={() => void reread(document)}>{reading ? "Sedang ekstrak…" : "Cuba baca semula"}</Button>
                     <Button type="button" className="!h-12" onClick={() => setActiveId(document.id)}>Semak</Button>
                   </div>
                 </div>
@@ -518,8 +641,11 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
               document={active}
               observations={activeObservations}
               onConfirm={(row, draft) => void confirmRow(row, draft)}
+              saveFeedback={saveFeedback}
               onOpen={() => void openDocument(active)}
               onAdd={() => void addManual(active.id)}
+              onConfirmAll={(drafts) => void confirmAll(active, drafts)}
+              onDeleteManual={(row) => void deleteManual(row)}
             />
           ) : null}
         </section>
@@ -565,7 +691,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
         <section>
           <h2 className="font-heading text-2xl">Graf setiap parameter</h2>
           <div className="mt-3">
-            <ParameterCharts series={parameterSeries(confirmed)} onOpen={(documentId) => {
+            <ParameterCharts series={parameterSeries(analysisReadings)} onOpen={(documentId) => {
               const document = data?.documents.find((item) => item.id === documentId)
               if (document) void openDocument(document)
             }} />
@@ -577,7 +703,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
         <section className="grid gap-3">
           <h2 className="font-heading text-2xl">Analisis AI</h2>
           <p className="text-sm leading-6 text-muted-foreground">
-            Analisis AI dijana daripada keputusan yang telah disahkan. Ia ialah penerangan pendidikan, bukan diagnosis atau arahan mengubah ubat/dialisis. Tip pemakanan perlu disemak bersama pasukan dialisis.
+            {provisionalCount > 0 ? `${provisionalCount} bacaan AI belum disemak digunakan untuk analisis dan graf. ` : ""}Graf, penerangan dan tip pemakanan boleh menggunakan bacaan ekstrak yang belum disemak. Keputusan AI mungkin salah: bandingkan dengan laporan makmal sebelum mengambil tindakan. Ini bukan diagnosis atau arahan mengubah ubat/dialisis; semak tip pemakanan dengan pasukan dialisis.
           </p>
           {live.summary.map((item) => <p key={item} className="rounded-2xl bg-card p-4 text-sm leading-6 ring-1 ring-foreground/10">{item}</p>)}
           {live.parameters.map((item) => (
@@ -590,7 +716,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
             </article>
           ))}
           <Button type="button" className="!h-12 w-fit" disabled={confirmed.length === 0 || analysing} onClick={() => void saveAnalysis()}>
-            {analysing ? "Sedang menjana analisis AI…" : "Jana dan simpan analisis AI"}
+            {analysing ? "Sedang menjana analisis AI…" : "Jalankan Analisis Baru"}
           </Button>
           {analysing && analysisStage ? (
             <div role="status" aria-live="polite" className="rounded-2xl border border-primary/40 bg-primary/10 p-4">
@@ -599,7 +725,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
               <ol className="mt-3 grid gap-2 text-sm">
                 {[
                   ["session", "Sahkan sesi pesakit"],
-                  ["sending", "Hantar keputusan yang disahkan"],
+                  ["sending", "Hantar bacaan tersimpan (termasuk yang belum disemak)"],
                   ["analysing", "Gemini menganalisis setiap parameter"],
                   ["saving", "Simpan analisis dan tip pemakanan"],
                 ].map(([stage, label], index) => {
@@ -616,6 +742,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
             return (
               <article key={item.id} className="rounded-2xl bg-muted p-4 text-sm leading-6">
                 <p className="font-medium">Disimpan {formatDate(item.createdAt.slice(0, 10))} {item.createdAt.slice(11, 16)} · {item.version}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Analisis ini menggunakan bacaan yang tersedia pada waktu ia dijana. Jika bacaan diubah selepas itu, tekan “Jalankan Analisis Baru”.</p>
                 <p className="mt-2 whitespace-pre-wrap">{item.summary}</p>
                 {aiParameters.map((parameter, index) => (
                   <div key={`${parameter.key ?? "parameter"}-${parameter.date ?? index}-${index}`} className="mt-3 rounded-xl border border-border bg-card p-3">
@@ -652,19 +779,30 @@ function ReviewCard({
   document,
   observations,
   onConfirm,
+  saveFeedback,
   onOpen,
   onAdd,
+  onConfirmAll,
+  onDeleteManual,
 }: {
   document: LabDocument
   observations: LabObservation[]
   onConfirm: (row: LabObservation, draft: ReviewDraft) => void
+  saveFeedback: { rowId: string; message: string; ok: boolean } | null
   onOpen: () => void
   onAdd: () => void
+  onConfirmAll: (drafts: Record<string, ReviewDraft>) => void
+  onDeleteManual: (row: LabObservation) => void
 }) {
   const signature = observations.map((row) => `${row.id}:${row.updatedAt}:${row.status}:${row.value ?? ""}`).join("|")
   const [state, setState] = useState(() => ({ signature, drafts: draftsFrom(observations) }))
   if (state.signature !== signature) setState({ signature, drafts: draftsFrom(observations) })
   const drafts = state.drafts
+  const pendingRows = observations.filter((row) => row.status !== "disahkan")
+  const incompleteRows = pendingRows.filter((row) => {
+    const draft = drafts[row.id]
+    return !draft || !draft.originalName.trim() || !draft.value.trim() || !draft.unit.trim() || !draft.takenOn || !draft.standardKey
+  })
   function setDrafts(next: Record<string, ReviewDraft>) {
     setState({ signature, drafts: next })
   }
@@ -680,47 +818,42 @@ function ReviewCard({
         const draft = drafts[row.id]
         if (!draft) return null
         return (
-          <div key={row.id} className="grid gap-3 border-t border-border pt-4">
-            <p className="text-sm leading-6">
-              {row.status === "disahkan" ? "Disahkan. " : "Belum disahkan. "}
-              {row.uncertain ? "Nilai atau tarikh tidak pasti. " : "Teks ini lengkap, tetapi masih perlukan semakan anda. "}
-              {row.source === "pesakit" ? "Dimasukkan pesakit." : "Diekstrak, belum menjadi rekod sehingga disahkan."}
-            </p>
-            <blockquote className="rounded-lg bg-muted px-3 py-2 text-sm leading-6">{row.snippet}</blockquote>
-            <Label htmlFor={`${row.id}-nama`}>Nama pada laporan</Label>
-            <Input id={`${row.id}-nama`} className="!h-12" value={draft.originalName} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, originalName: event.target.value } })} />
-            <Label htmlFor={`${row.id}-parameter`}>Parameter standard</Label>
-            <ChoiceSelect
-              id={`${row.id}-parameter`}
-              value={draft.standardKey}
-              onChange={(value) => setDrafts({ ...drafts, [row.id]: { ...draft, standardKey: value } })}
-              placeholder="Biarkan jika tidak pasti"
-              options={LAB_PARAMETERS.map((item) => ({ value: item.key, label: item.label }))}
-            />
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div>
-                <Label htmlFor={`${row.id}-nilai`}>Nilai</Label>
-                <Input id={`${row.id}-nilai`} className="!h-12" inputMode="decimal" value={draft.value} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, value: event.target.value } })} />
+          <details key={row.id} className="group rounded-xl border border-border/80 bg-background/50 p-3">
+            <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
+              <span className="min-w-0">
+                <span className="block truncate font-medium">{draft.originalName || "Parameter tanpa nama"}</span>
+                <span className="block text-sm text-muted-foreground">{draft.value.trim() ? `${draft.value} ${draft.unit}` : "Nilai belum dikenal pasti"} · {row.status === "disahkan" ? "Disahkan" : "Perlu semakan"}</span>
+              </span>
+              <span className="shrink-0 text-sm font-medium text-primary">Ada maklumat salah / Edit <span aria-hidden="true">⌄</span></span>
+            </summary>
+            <div className="mt-3 grid gap-3 border-t border-border pt-3">
+              <p className="text-sm text-muted-foreground">Semakan tidak wajib. Jika mahu mengesahkan atau membetulkan bacaan, bandingkan dengan laporan asal.</p>
+              <blockquote className="rounded-lg bg-muted px-3 py-2 text-sm leading-6">{row.snippet}</blockquote>
+              <Label htmlFor={`${row.id}-nama`}>Nama pada laporan</Label>
+              <Input id={`${row.id}-nama`} className="!h-12" value={draft.originalName} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, originalName: event.target.value } })} />
+              <Label htmlFor={`${row.id}-parameter`}>Parameter standard</Label>
+              <ChoiceSelect id={`${row.id}-parameter`} value={draft.standardKey} onChange={(value) => setDrafts({ ...drafts, [row.id]: { ...draft, standardKey: value } })} placeholder="Biarkan jika tidak pasti" options={LAB_PARAMETERS.map((item) => ({ value: item.key, label: item.label }))} />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div><Label htmlFor={`${row.id}-nilai`}>Nilai</Label><Input id={`${row.id}-nilai`} className="!h-12" inputMode="decimal" value={draft.value} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, value: event.target.value } })} /></div>
+                <div><Label htmlFor={`${row.id}-unit`}>Unit</Label><Input id={`${row.id}-unit`} className="!h-12" value={draft.unit} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, unit: event.target.value } })} /></div>
               </div>
-              <div>
-                <Label htmlFor={`${row.id}-unit`}>Unit</Label>
-                <Input id={`${row.id}-unit`} className="!h-12" value={draft.unit} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, unit: event.target.value } })} />
+              <details className="text-sm"><summary className="min-h-10 cursor-pointer text-muted-foreground">Ubah tarikh ujian (jika salah)</summary><Label htmlFor={`${row.id}-tarikh`}>Tarikh ujian</Label><Input id={`${row.id}-tarikh`} className="!h-12" type="date" value={draft.takenOn} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, takenOn: event.target.value } })} /></details>
+              {row.refText ? <p className="text-sm text-muted-foreground">Julat tercetak: {row.refText}</p> : null}
+              <label className="flex min-h-12 items-center gap-3 text-sm"><input type="checkbox" className="size-5" checked={draft.accept} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, accept: event.target.checked } })} />Saya telah bandingkan bacaan dengan laporan asal.</label>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" className="!h-12 w-fit" onClick={() => onConfirm(row, draft)}>Sahkan bacaan ini</Button>
+                {row.source === "pesakit" && row.status !== "disahkan" ? <Button type="button" variant="destructive" className="!h-12" onClick={() => onDeleteManual(row)}>Padam parameter manual</Button> : null}
               </div>
-              <div>
-                <Label htmlFor={`${row.id}-tarikh`}>Tarikh ujian</Label>
-                <Input id={`${row.id}-tarikh`} className="!h-12" type="date" value={draft.takenOn} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, takenOn: event.target.value } })} />
-              </div>
+              {saveFeedback?.rowId === row.id ? <p role="status" aria-live="polite" className={`rounded-lg border p-3 text-sm font-semibold ${saveFeedback.ok ? "border-emerald-500/50 bg-emerald-500/10" : "border-amber-500/50 bg-amber-500/10"}`}>{saveFeedback.message}</p> : null}
             </div>
-            {row.refText ? <p className="text-sm leading-6">Julat tercetak: {row.refText}</p> : null}
-            <label className="flex min-h-12 items-center gap-3 text-sm">
-              <input type="checkbox" className="size-5" checked={draft.accept} onChange={(event) => setDrafts({ ...drafts, [row.id]: { ...draft, accept: event.target.checked } })} />
-              Saya telah semak nilai ini pada laporan asal.
-            </label>
-            <Button type="button" className="!h-12 w-fit" onClick={() => onConfirm(row, draft)}>Sahkan keputusan</Button>
-          </div>
+          </details>
         )
       })}
-      <Button type="button" variant="outline" className="!h-12 w-fit" onClick={onAdd}>Tambah keputusan manual</Button>
+      <div className="flex flex-wrap gap-3">
+        {incompleteRows.length > 0 ? <div role="status" className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm leading-6"><p className="font-semibold">{incompleteRows.length} daripada {pendingRows.length} bacaan belum lengkap untuk pengesahan semua (tidak wajib).</p><p>Buka Edit dan semak nilai, unit, tarikh serta parameter standard untuk: {incompleteRows.slice(0, 8).map((row) => row.originalName || "Parameter tanpa nama").join(", ")}{incompleteRows.length > 8 ? " dan lain-lain" : ""}. Bacaan ekstrak telah disimpan; tidak perlu lengkapkan semuanya sekarang. Jangan sahkan nilai yang tidak pasti.</p></div> : null}
+        <Button type="button" variant="outline" className="!h-12" onClick={onAdd}>Tambah keputusan manual</Button>
+
+      </div>
     </div>
   )
 }

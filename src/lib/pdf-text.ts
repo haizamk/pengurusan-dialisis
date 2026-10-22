@@ -249,9 +249,23 @@ export async function extractReport(
         diagnostic,
       }
     }
-    if (gemini && gemini.errorCode !== "gemini-tidak-tersedia") {
+    if (gemini) {
+      diagnostic.method = "gemini"
+      diagnostic.provider = "Nous Research / OpenAI GPT-4o"
+      diagnostic.stage = "gagal"
       diagnostic.errorCode = gemini.errorCode
       diagnostic.errorMessage = gemini.errorMessage
+      diagnostic.durationMs = Date.now() - started
+      // Clinical data must not silently fall back to local OCR/parser after the model request fails.
+      // Return an explicit failure so the UI can preserve prior readings and ask for a retry/manual review.
+      return {
+        text: "",
+        patientStatus: PATIENT_STATUS.failed,
+        observations: [],
+        reportDate: null,
+        dateUncertain: true,
+        diagnostic,
+      }
     }
   }
 
