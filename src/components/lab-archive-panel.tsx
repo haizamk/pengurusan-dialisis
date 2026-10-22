@@ -482,7 +482,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
                 {[
                   ["validating", "Semak jenis dan saiz fail"],
                   ["archiving", "Simpan fail asal ke arkib pesakit"],
-                  ["extracting", "Ekstrak semula dengan OCR + AI"],
+                  ["extracting", "Hantar halaman ke GPT-4o melalui Nous"],
                   ["saving", "Simpan bacaan untuk semakan manual"],
                 ].map(([stage, label], index) => {
                   const stages = ["validating", "archiving", "extracting", "saving"]
