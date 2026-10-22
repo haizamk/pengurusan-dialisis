@@ -59,7 +59,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         model,
         messages: [{ role: "user", content: [
-          { type: "text", text: "Baca hanya keputusan ujian makmal yang kelihatan. Jangan masukkan nama, nombor pengenalan, tarikh lahir, alamat atau maklumat pesakit dalam respons. Jangan teka nilai yang kabur. Pulangkan HANYA JSON sah dengan format {"tests":[{"test":"Haemoglobin","value":"11.4","unit":"g/dL","reference_range":"12.0 - 18.0","flag":"L","page":1}]}. value mesti string supaya perpuluhan kekal. Gunakan null untuk unit, reference_range, flag atau page yang tidak jelas. Jika tiada ujian boleh dibaca, pulangkan {"tests":[]}. Tiada markdown." },
+          { type: "text", text: `Baca hanya keputusan ujian makmal yang kelihatan. Jangan masukkan nama, nombor pengenalan, tarikh lahir, alamat atau maklumat pesakit dalam respons. Jangan teka nilai yang kabur. Pulangkan HANYA JSON sah dengan format {"tests":[{"test":"Haemoglobin","value":"11.4","unit":"g/dL","reference_range":"12.0 - 18.0","flag":"L","page":1}]}. value mesti string supaya perpuluhan kekal. Gunakan null untuk unit, reference_range, flag atau page yang tidak jelas. Jika tiada ujian boleh dibaca, pulangkan {"tests":[]}. Tiada markdown.` },
           { type: "image_url", image_url: { url: "data:" + file.type + ";base64," + Buffer.from(bytes).toString("base64"), detail: "high" } },
         ] }],
         max_tokens: 1800,
