@@ -22,8 +22,7 @@ function bytesToBase64(bytes: Uint8Array) {
 }
 
 async function nodeCanvas() {
-  const load = new Function("specifier", "return import(specifier)") as (specifier: string) => Promise<unknown>
-  return load("@napi-rs/canvas")
+  return import("@napi-rs/canvas")
 }
 
 // Compatibility shim: provider is Nous Research, model is OpenAI GPT-4o hosted through Nous.
