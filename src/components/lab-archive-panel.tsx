@@ -62,6 +62,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
   const [uploadStage, setUploadStage] = useState<"validating" | "archiving" | "extracting" | "saving" | "done" | "error" | null>(null)
   const [analysisStage, setAnalysisStage] = useState<"session" | "sending" | "analysing" | "saving" | null>(null)
   const [analysing, setAnalysing] = useState(false)
+  const [saveFeedback, setSaveFeedback] = useState<{ rowId: string; message: string; ok: boolean } | null>(null)
   const [parameter, setParameter] = useState("all")
   const [range, setRange] = useState<"3m" | "6m" | "12m" | "all">("all")
   const [today, setToday] = useState("")
@@ -276,11 +277,14 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
 
   async function confirmRow(row: LabObservation, draft: ReviewDraft) {
     if (!data || !patientId) return
+    setSaveFeedback(null)
     if (!draft.accept) {
+      setSaveFeedback({ rowId: row.id, ok: false, message: "Tandakan kotak semakan laporan asal sebelum mengesahkan bacaan." })
       toast.error("Tandakan bahawa anda telah menyemak nilai pada laporan.")
       return
     }
     if (draft.value.trim() === "") {
+      setSaveFeedback({ rowId: row.id, ok: false, message: "Isi nilai bacaan dahulu." })
       toast.error("Nilai kosong tidak disimpan, termasuk sebagai sifar.")
       return
     }
@@ -296,6 +300,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
       updatedAt,
     })
     if ("error" in result) {
+      setSaveFeedback({ rowId: row.id, ok: false, message: result.error })
       toast.error(result.error)
       return
     }
@@ -312,9 +317,12 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
     try {
       await commit({ ...data, documents, observations, audits: audit ? [...data.audits, audit] : data.audits })
       await mirrorBloodRecord(result.row, documents.find((item) => item.id === row.documentId)?.fileName ?? "laporan")
+      setSaveFeedback({ rowId: row.id, ok: true, message: "✓ Berjaya disimpan dalam Rekod Darah." })
       toast.success("✓ Berjaya disimpan dalam Rekod Darah.", { id: notification, duration: 6000 })
     } catch (error) {
-      toast.error(error instanceof Error ? `Tidak berjaya disimpan: ${error.message}` : "Tidak berjaya disimpan.", { id: notification, duration: 8000 })
+      const message = error instanceof Error ? `Tidak berjaya disimpan: ${error.message}` : "Tidak berjaya disimpan."
+      setSaveFeedback({ rowId: row.id, ok: false, message })
+      toast.error(message, { id: notification, duration: 8000 })
     }
   }
 
@@ -621,6 +629,7 @@ export function LabArchivePanel({ sections = ["upload", "charts", "diet", "analy
               document={active}
               observations={activeObservations}
               onConfirm={(row, draft) => void confirmRow(row, draft)}
+              saveFeedback={saveFeedback}
               onOpen={() => void openDocument(active)}
               onAdd={() => void addManual(active.id)}
               onConfirmAll={(drafts) => void confirmAll(active, drafts)}
@@ -758,6 +767,7 @@ function ReviewCard({
   document,
   observations,
   onConfirm,
+  saveFeedback,
   onOpen,
   onAdd,
   onConfirmAll,
@@ -766,6 +776,7 @@ function ReviewCard({
   document: LabDocument
   observations: LabObservation[]
   onConfirm: (row: LabObservation, draft: ReviewDraft) => void
+  saveFeedback: { rowId: string; message: string; ok: boolean } | null
   onOpen: () => void
   onAdd: () => void
   onConfirmAll: (drafts: Record<string, ReviewDraft>) => void
@@ -821,6 +832,7 @@ function ReviewCard({
                 <Button type="button" className="!h-12 w-fit" onClick={() => onConfirm(row, draft)}>Sahkan bacaan ini</Button>
                 {row.source === "pesakit" && row.status !== "disahkan" ? <Button type="button" variant="destructive" className="!h-12" onClick={() => onDeleteManual(row)}>Padam parameter manual</Button> : null}
               </div>
+              {saveFeedback?.rowId === row.id ? <p role="status" aria-live="polite" className={`rounded-lg border p-3 text-sm font-semibold ${saveFeedback.ok ? "border-emerald-500/50 bg-emerald-500/10" : "border-amber-500/50 bg-amber-500/10"}`}>{saveFeedback.message}</p> : null}
             </div>
           </details>
         )
