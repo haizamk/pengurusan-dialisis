@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ms">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ujian Nous API</title>
+<style>
+body{font:16px system-ui,sans-serif;max-width:640px;margin:32px auto;padding:0 16px;color:#17212b}
+label,input,button{display:block;width:100%;box-sizing:border-box;margin-top:12px}
+input,button{padding:12px;font:inherit}button{cursor:pointer;background:#126e75;color:white;border:0;border-radius:8px}
+#result{white-space:pre-wrap;margin-top:16px;padding:12px;background:#f2f5f6;border-radius:8px}
+small{color:#52616b}
+</style>
+</head>
+<body>
+<h1>Ujian sambungan Nous</h1>
+<p>Halaman sementara untuk ujian Deploy Preview. Ia hanya menghantar token ujian kepada fungsi projek sendiri; API key Nous tidak dimasukkan atau dipaparkan di sini.</p>
+<form id="test-form">
+<label for="token">NOUS_TEST_TOKEN</label>
+<input id="token" name="token" type="password" autocomplete="off" minlength="20" required>
+<button type="submit">Uji sambungan Nous</button>
+</form>
+<div id="result" role="status" aria-live="polite">Belum diuji.</div>
+<small>Jangan kongsi token. Jangan gunakan halaman ini di laman produksi.</small>
+<script>
+const form = document.getElementById("test-form");
+const tokenInput = document.getElementById("token");
+const result = document.getElementById("result");
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const token = tokenInput.value;
+  result.textContent = "Sedang menguji…";
+  try {
+    const response = await fetch("/.netlify/functions/nous-healthcheck", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.ok && data.ok === true) {
+      result.textContent = "BERJAYA — Nous API boleh dicapai. Bilangan model disenaraikan: " + String(data.modelsListed ?? "tidak diketahui") + ".";
+    } else {
+      const messages = {
+        unauthorized: "Token ujian tidak sepadan (401). Semak NOUS_TEST_TOKEN dalam Netlify.",
+        test_not_configured: "Pemboleh ubah NOUS_TEST_TOKEN atau NOUS_API_KEY tiada pada deploy ini.",
+        nous_auth_failed: "Nous menolak pengesahan API key (401/403). Semak key dan akses akaun.",
+        nous_rate_limited: "Nous mengehadkan permintaan (429). Semak kredit atau had akaun.",
+        nous_api_error: "Nous API memulangkan ralat. Kod status: " + String(data.status ?? response.status),
+        nous_unreachable: "Server tidak dapat mencapai Nous API.",
+        method_not_allowed: "Kaedah permintaan tidak dibenarkan.",
+        invalid_request: "Permintaan ujian tidak sah."
+      };
+      result.textContent = "GAGAL — " + (messages[data.error] || "Ralat ujian. Kod status: " + response.status);
+    }
+  } catch {
+    result.textContent = "GAGAL — Tidak dapat menghubungi fungsi ujian. Semak Deploy Preview dan cuba lagi.";
+  } finally {
+    tokenInput.value = "";
+  }
+});
+</script>
+</body>
+</html>
